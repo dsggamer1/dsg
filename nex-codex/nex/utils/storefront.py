@@ -13,7 +13,7 @@ def product_embed(product, config=None):
     item.add_field(name='Price', value=f'{product.currency} {product.price/100:,.2f}' if product.price else 'Free claim')
     item.add_field(name='Collection', value='Server template' if product.category == 'template' else 'Bot source code')
     item.add_field(name='Terms', value=product.terms[:1024] or 'No additional terms.', inline=False)
-    item.add_field(name='How it works', value='Confirm your order → private ticket → manual payment review → private delivery.' if product.price else 'Confirm your claim → saved entitlement → private delivery.', inline=False)
+    item.add_field(name='How it works', value='Confirm your order → private ticket → staff assistance → owner release → private delivery.' if product.price else 'Confirm your claim → saved entitlement → private delivery.', inline=False)
     if product.thumbnail:
         item.set_thumbnail(url=product.thumbnail)
     return item
@@ -103,7 +103,7 @@ class ShopView(PersonalView):
             item.add_field(name=f'{p.name} · {price}', value=f'{p.description[:160] or "Explore this product."}\n`{p.code}`', inline=False)
         if not self.products:
             item.description = 'No published products match this view. The bot owner can add a product with /addproduct and publish it with /productpublish.'
-        item.set_footer(text=f'NEX CODEX • Page {self.page} • Payments checked by people')
+        item.set_footer(text=f'NEX CODEX • Page {self.page} • Private orders • Personal support')
         return item
 
     async def turn(self, interaction, offset):

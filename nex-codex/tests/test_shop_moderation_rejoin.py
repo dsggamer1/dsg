@@ -109,7 +109,7 @@ async def test_paid_checkout_automatically_creates_private_ticket(db,core,paid,t
     await view.confirm_order.callback(interaction)
     commerce.send_purchase_ticket.assert_awaited_once()
     order=commerce.send_purchase_ticket.await_args.args[3]
-    assert order.amount==49900 and order.state=='pending_payment'
+    assert order.amount==49900 and order.state=='awaiting_staff'
     view.stop();await bot.close()
 
 

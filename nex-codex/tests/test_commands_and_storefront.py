@@ -45,7 +45,7 @@ async def test_prefix_respects_environment_then_guild_override(db, tmp_path):
     await bot.close()
 
 
-@pytest.mark.parametrize('name,private', [('help',True),('ticket',True),('deliver',True),('paymentreview',True),('broadcast',True),('giveaway',False),('shop',False)])
+@pytest.mark.parametrize('name,private', [('help',True),('ticket',True),('deliver',True),('orderfulfill',True),('broadcast',True),('giveaway',False),('shop',False)])
 async def test_slower_slash_commands_are_acknowledged(db,name,private):
     bot = NexBot(Settings(_env_file=None, auto_load_emojis=False, sync_commands=False), db)
     ctx = SimpleNamespace(interaction=SimpleNamespace(response=SimpleNamespace(is_done=lambda:False)),command=SimpleNamespace(name=name),defer=AsyncMock())
@@ -86,7 +86,7 @@ async def test_storefront_checkout_creates_one_free_order(db,core,market,free,bu
     await checkout.confirm_order.callback(interaction)
     with db.sessions() as session:
         order=session.scalar(select(Order))
-        assert order.state=='paid' and order.amount==0
+        assert order.state=='ready' and order.amount==0
     # Discord redelivery of the same interaction must be idempotent.
     await checkout.confirm_order.callback(interaction)
     with db.sessions() as session:
@@ -127,7 +127,7 @@ async def test_failed_discord_delivery_does_not_mark_delivered(db,core,market,fr
     with pytest.raises(discord.Forbidden):
         await type(bot.get_cog('Commerce')).deliver.callback(bot.get_cog('Commerce'),ctx,order.id)
     with db.sessions() as session:
-        assert session.get(Order,order.id).state=='paid'
+        assert session.get(Order,order.id).state=='ready'
         assert session.get(Order,order.id).delivered_at is None
     await bot.close()
 
@@ -168,13 +168,13 @@ def test_price_input_rejects_unsafe_values(value):
 
 @pytest.mark.parametrize('changes',[{'auto_role':20}])
 def test_configuration_cannot_self_assign_staff_roles(core,owner,changes):
-    with pytest.raises(DomainError,match='Staff and payment'):
+    with pytest.raises(DomainError,match='Staff roles'):
         core.configure(owner,changes)
 
 
 def test_staff_role_rejected_even_without_discord_permission_bits():
     role=SimpleNamespace(id=30)
-    with pytest.raises(DomainError,match='Staff and payment'):
+    with pytest.raises(DomainError,match='Staff roles'):
         safe_role(None,None,role,[30])
 
 

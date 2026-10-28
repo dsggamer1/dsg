@@ -19,14 +19,12 @@ db=Database(url)
 db.initialize()
 admin=Actor(100,1000,administrator=True,owner=True)
 buyer=Actor(200,1000)
-Core(db).configure(admin,{'upi_id':'synthetic@example','qr_url':'https://example.com/synthetic-qr.png','payee':'Synthetic test fixture'})
 market=Marketplace(db,Path('/tmp'))
 product=market.save_product(admin,{'name':'PostgreSQL test product','category':'bot','published':True,'price':1000,'delivery_value':'Synthetic delivery'})
 order=market.order(buyer,product.id,str(uuid.uuid4()))
-market.submit_payment(buyer,order.id,'https://cdn.discordapp.com/attachments/1/2/test.png')
 def approve(_):
     try:
-        market.review_payment(admin,order.id,True)
+        market.fulfill(admin,order.id,'Synthetic fulfillment')
         return True
     except DomainError:
         return False
@@ -39,5 +37,5 @@ with db.sessions() as s:
     assert s.scalar(select(func.count()).select_from(Entitlement).where(Entitlement.order_id==order.id))==1
 for table in Base.metadata.sorted_tables:
     str(CreateTable(table).compile(dialect=postgresql.dialect()))
-print('PostgreSQL 17 smoke passed: schema, configuration, paid order, 4 concurrent approvals (1 success), entitlement and delivery.')
+print('PostgreSQL 17 smoke passed: schema, configuration, manual order, 4 concurrent releases (1 success), entitlement and delivery.')
 db.engine.dispose()

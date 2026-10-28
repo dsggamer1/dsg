@@ -58,7 +58,7 @@ async def test_startup_loads_before_persistent_views_and_command_registration(db
     bot.fetch_application_emojis=client.fetch_application_emojis
     bot.create_application_emoji=client.create_application_emoji
     async def sync():
-        assert len(bot.tree.get_commands())==43
+        assert len(bot.tree.get_commands())==41
         assert theme.emoji_for('shop').startswith('<:nex_cart:')
         return []
     bot.tree.sync=AsyncMock(side_effect=sync)
@@ -106,7 +106,7 @@ async def test_fetch_denial_keeps_bot_commands_available_without_leaking_payload
     with caplog.at_level(logging.INFO,logger='nex'):
         async with bot:
             await bot.setup_hook()
-            assert len(bot.tree.get_commands())==43
+            assert len(bot.tree.get_commands())==41
             bot.create_application_emoji.assert_not_awaited()
     assert theme.emoji_for('help')==theme.DEFAULT_EMOJIS['help']
     assert 'emojis.application.partial' in caplog.text
@@ -156,7 +156,7 @@ async def test_startup_timeout_keeps_partial_mapping_and_finishes_setup(db,monke
     with caplog.at_level(logging.WARNING,logger='nex'):
         async with bot:
             await bot.setup_hook()
-            assert len(bot.tree.get_commands())==43
+            assert len(bot.tree.get_commands())==41
     assert theme.emoji_for('welcome').startswith('<:nex_welcome:')
     assert 'emojis.application.timeout' in caplog.text
 
@@ -167,6 +167,6 @@ async def test_missing_application_identity_reports_fallback(db,caplog):
     with caplog.at_level(logging.WARNING,logger='nex'):
         async with bot:
             await bot.setup_hook()
-            assert len(bot.tree.get_commands())==43
+            assert len(bot.tree.get_commands())==41
     assert 'emojis.application.unavailable' in caplog.text
     assert theme.emoji_for('shop')==theme.DEFAULT_EMOJIS['shop']

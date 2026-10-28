@@ -1,8 +1,8 @@
 from datetime import timedelta
 from sqlalchemy import select, func, or_
-from ..models import Product, Order, Payment, Entitlement, Hosting, Restriction, now
+from ..models import Product, Order, Entitlement, Hosting, Restriction, now
 from ..schemas import ProductInput
-from ..security import DomainError, safe_https, product_path
+from ..security import DomainError, product_path
 from .core import config, audit
 
 
@@ -83,26 +83,22 @@ class Marketplace:
             if expected_terms is not None and (p.price, p.currency, p.terms, p.name) != expected_terms:
                 raise DomainError('Product terms changed. Please confirm the updated product.')
             cfg = config(s, actor.guild_id)
-            if p.price and (not cfg['upi_id'] or not cfg['qr_url'] or not cfg['payee']):
-                raise DomainError('Payments are not configured. Ask server staff to configure UPI, QR and payee details.')
-            if p.price and cfg['currency'] != p.currency:
-                raise DomainError('Product and payment currencies do not match. Contact staff.')
             entitlement = s.scalar(select(Entitlement).where(Entitlement.guild_id == actor.guild_id, Entitlement.user_id == actor.user_id, Entitlement.product_id == p.id))
             if entitlement:
                 raise DomainError('You already own this product. Use your existing order for delivery.')
-            pending = s.scalar(select(Order).where(Order.guild_id == actor.guild_id, Order.user_id == actor.user_id, Order.product_id == p.id, Order.state.not_in(['cancelled', 'manually_refunded'])))
+            pending = s.scalar(select(Order).where(Order.guild_id == actor.guild_id, Order.user_id == actor.user_id, Order.product_id == p.id, Order.state.not_in(['cancelled'])))
             if pending:
                 raise DomainError(f'An order already exists: {pending.id}')
             if p.price == 0:
                 restriction = s.scalar(select(Restriction).where(Restriction.guild_id == actor.guild_id, Restriction.user_id == actor.user_id, Restriction.active.is_(True)))
                 if restriction:
                     raise DomainError('Free claims restricted. Open a support ticket to request a review.')
-                claims = list(s.scalars(select(Order).where(Order.guild_id == actor.guild_id, Order.user_id == actor.user_id, Order.amount == 0, Order.state.not_in(['cancelled', 'manually_refunded'])).order_by(Order.created_at.desc())))
+                claims = list(s.scalars(select(Order).where(Order.guild_id == actor.guild_id, Order.user_id == actor.user_id, Order.amount == 0, Order.state.not_in(['cancelled'])).order_by(Order.created_at.desc())))
                 if len(claims) >= min(cfg['free_claim_limit'], p.claim_limit):
                     raise DomainError('Free claim limit reached. Contact staff for review.')
                 if claims and claims[0].created_at + timedelta(seconds=max(cfg['free_claim_cooldown'], p.cooldown_seconds)) > now():
                     raise DomainError('Please wait until your free claim cooldown ends.')
-            order = Order(guild_id=actor.guild_id, user_id=actor.user_id, product_id=p.id, amount=p.price, currency=p.currency, request_key=request_key, state='paid' if p.price == 0 else 'pending_payment', snapshot={key: getattr(p, key) for key in ('name', 'terms', 'delivery_kind', 'delivery_value')})
+            order = Order(guild_id=actor.guild_id, user_id=actor.user_id, product_id=p.id, amount=p.price, currency=p.currency, request_key=request_key, state='ready' if p.price == 0 else 'awaiting_staff', snapshot={key: getattr(p, key) for key in ('name', 'terms', 'delivery_kind', 'delivery_value')})
             s.add(order)
             s.flush()
             if not p.price:
@@ -125,55 +121,32 @@ class Marketplace:
             raise DomainError('Order not found.')
         return order
 
-    def submit_payment(self, actor, order_id, screenshot, reference=''):
-        safe_https(screenshot, attachment=True)
-        if len(reference) > 120 or len(screenshot) > 2000:
-            raise DomainError('Payment submission is too long.')
-        with self.db.transaction() as s:
-            order = self.scoped_order(s, actor, order_id)
-            if order.state not in ('pending_payment', 'rejected'):
-                raise DomainError('This order is not accepting payment submissions.')
-            payment = Payment(order_id=order.id, screenshot=screenshot, reference=reference)
-            s.add(payment)
-            order.state = 'payment_submitted'
-            audit(s, actor, 'payment.submit', order.id)
-            s.flush()
-            return payment
 
-    def review_payment(self, actor, order_id, approve, reason=''):
+
+    def fulfill(self, actor, order_id, reason):
+        actor.require_owner()
+        if not reason.strip() or len(reason) > 500:
+            raise DomainError('Provide a reason of 1–500 characters.')
         with self.db.transaction() as s:
-            actor.require(config(s, actor.guild_id), 'payment')
             order = s.get(Order, order_id)
             if not order or order.guild_id != actor.guild_id:
                 raise DomainError('Order not found.')
-            if approve and order.snapshot.get('delivery_kind') == 'hosting':
-                raise DomainError('Hosting is no longer offered. Resolve this historical order with staff.')
-            if order.user_id == actor.user_id:
-                raise DomainError('You cannot review your own payment.')
-            if order.state not in ('payment_submitted', 'verification_required'):
-                raise DomainError('This payment has already been decided or has no submission.')
-            if len(reason) > 500 or not approve and not reason.strip():
-                raise DomainError('A rejection reason of 1–500 characters is required.')
-            payment = s.scalar(select(Payment).where(Payment.order_id == order.id, Payment.state == 'submitted').order_by(Payment.created_at.desc()))
-            if not payment:
-                raise DomainError('No pending payment submission.')
-            payment.state = 'approved' if approve else 'rejected'
-            payment.reviewer_id, payment.reviewed_at, payment.reason = actor.user_id, now(), reason
-            order.state = 'paid' if approve else 'rejected'
-            if approve:
-                self._entitle(s, order)
-            audit(s, actor, 'payment.approve' if approve else 'payment.reject', order.id, reason=reason)
+            if order.snapshot.get('delivery_kind') == 'hosting':
+                raise DomainError('Hosting is no longer offered.')
+            if order.state != 'awaiting_staff':
+                raise DomainError('Only orders awaiting staff can be released; this order is already handled.')
+            self._entitle(s, order)
+            order.state = 'ready'
+            audit(s, actor, 'order.release', order.id, reason=reason.strip())
             return order
 
     def change_order(self, actor, order_id, state, reason):
-        if state not in ('cancelled', 'manually_refunded') or not reason.strip() or len(reason) > 500:
-            raise DomainError('Choose cancelled or manually_refunded and provide a reason.')
+        if state != 'cancelled' or not reason.strip() or len(reason) > 500:
+            raise DomainError('Choose cancelled and provide a reason of 1–500 characters.')
         with self.db.transaction() as s:
             order = self.scoped_order(s, actor, order_id, staff=True)
-            if state == 'cancelled' and order.state not in ('pending_payment', 'rejected', 'payment_submitted', 'verification_required'):
-                raise DomainError('Only unpaid orders may be cancelled.')
-            if state == 'manually_refunded' and (order.amount == 0 or order.state not in ('paid', 'delivered')):
-                raise DomainError('Only paid orders may be recorded as manually refunded.')
+            if order.state == 'cancelled':
+                raise DomainError('This order is already cancelled.')
             order.state = state
             e = s.scalar(select(Entitlement).where(Entitlement.order_id == order.id))
             if e:
@@ -181,14 +154,14 @@ class Marketplace:
             hosting = s.scalar(select(Hosting).where(Hosting.order_id == order.id))
             if hosting:
                 hosting.state = 'cancelled'
-            audit(s, actor, 'order.' + state, order.id, reason=reason)
+            audit(s, actor, 'order.cancelled', order.id, reason=reason)
 
     def delivery(self, actor, order_id):
         with self.db.sessions() as s:
             order = self.scoped_order(s, actor, order_id)
             entitlement = s.scalar(select(Entitlement).where(Entitlement.order_id == order.id, Entitlement.user_id == actor.user_id))
-            if order.state not in ('paid', 'delivered') or not entitlement:
-                raise DomainError('Delivery requires verified payment and an active entitlement.')
+            if order.state not in ('ready', 'delivered') or not entitlement:
+                raise DomainError('Delivery requires released product access and an active entitlement.')
             result = dict(order.snapshot)
             if result['delivery_kind'] == 'hosting':
                 raise DomainError('Hosting is no longer offered. Contact staff about this historical order.')
@@ -201,7 +174,7 @@ class Marketplace:
             order = self.scoped_order(s, actor, order_id)
             if order.state == 'delivered':
                 return
-            if order.state != 'paid':
+            if order.state != 'ready':
                 raise DomainError('Delivery cannot be completed in this state.')
             order.state, order.delivered_at = 'delivered', now()
             audit(s, actor, 'order.delivered', order.id)

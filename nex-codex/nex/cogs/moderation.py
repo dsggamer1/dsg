@@ -84,7 +84,7 @@ class Moderation(commands.Cog):
         if not ctx.guild.me.guild_permissions.manage_roles:raise DomainError('Bot Manage Roles permission is missing.')
         if role.guild.id!=ctx.guild.id:raise DomainError('Choose a role from this server.')
         cfg=self.bot.core.config(ctx.guild.id)
-        safe_role(ctx.guild,moderator,role,cfg['staff_roles']+cfg['payment_roles'])
+        safe_role(ctx.guild,moderator,role,cfg['staff_roles'])
         await (target.add_roles if add else target.remove_roles)(role,reason=f'NEX CODEX role change by {ctx.author.id}')
         await self.record(ctx,target,'give role' if add else 'take role',f'Role {role.id}')
 

@@ -4,11 +4,11 @@ from pathlib import Path
 import discord
 
 CARD_ROOT = Path(__file__).resolve().parents[1] / 'assets' / 'cards'
-CARD_KEYS = frozenset({'shop', 'product', 'ticket', 'payment', 'giveaway', 'welcome', 'leave', 'broadcast', 'settings', 'help'})
+CARD_KEYS = frozenset({'shop', 'product', 'ticket', 'giveaway', 'welcome', 'leave', 'broadcast', 'settings', 'help'})
 
 
 def card_file(item, key, channel=None):
-    # Preserve configured shop images, payment QR codes and explicit attachments.
+    # Preserve configured shop images and explicit attachments.
     if item.image.url or key not in CARD_KEYS:
         return None
     guild = getattr(channel, 'guild', None)

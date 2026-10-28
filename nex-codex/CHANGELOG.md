@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.0 — 2026-10-28
+
+- Remove the complete QR/UPI payment system: setup/submission/review commands, reviewer authorization, receipt handling, configuration, Payment ORM and payment banner.
+- Retain priced catalogue and automatic private order tickets. Replace transaction states with awaiting_staff/ready and owner-only audited product-access release; retain free claims, cancellation/revocation and protected delivery.
+- Add schema3 migration preserving existing entitled access/history without unlocking pending legacy orders.
+- Update themed help, setup guide, owner documentation and security/concurrency/migration tests.
+
 ## 1.7.0 — 2026-10-28
 
 - Add short editable public product codes and scoped product-name autocomplete. Keep immutable internal order links; migrate schema1→2 safely and rename source category to bot.

@@ -18,9 +18,8 @@ class Actor:
     administrator: bool = False
     owner: bool = False
 
-    def require(self, config: dict, capability='staff'):
-        key = 'payment_roles' if capability == 'payment' else 'staff_roles'
-        if not (self.owner or self.administrator or self.roles.intersection(config.get(key, []))):
+    def require(self, config: dict):
+        if not (self.owner or self.administrator or self.roles.intersection(config.get('staff_roles', []))):
             raise DomainError('You do not have permission for this action.')
 
     def require_owner(self):
@@ -32,7 +31,7 @@ class Actor:
             raise DomainError('A configured bot owner or server Administrator is required.')
 
 
-def safe_https(value: str, *, attachment=False):
+def safe_https(value: str):
     p = urlparse(value)
     if p.scheme != 'https' or not p.hostname or p.username or p.password or p.port not in (None, 443):
         raise ValueError('Use a public HTTPS URL without credentials.')
@@ -44,8 +43,6 @@ def safe_https(value: str, *, attachment=False):
         ip = None
     if ip and not ip.is_global:
         raise ValueError('Private URLs are not allowed.')
-    if attachment and p.hostname.lower() not in ('cdn.discordapp.com', 'media.discordapp.net'):
-        raise ValueError('Upload the screenshot as a Discord attachment.')
     return value
 
 

@@ -77,9 +77,6 @@ def test_unsafe_urls(url):
         safe_https(url)
 
 
-def test_screenshot_host_allowlist():
-    with pytest.raises(ValueError):
-        safe_https('https://attacker.example.com/fake.png', attachment=True)
 
 
 
@@ -124,7 +121,7 @@ def test_hosting_products_no_longer_available(market, owner):
 async def test_existing_ticket_repairs_overwrites(db,core,buyer):
     from unittest.mock import AsyncMock
     from nex.models import Ticket
-    roles={20:object(),30:object()}
+    roles={20:object()}
     customer,bot,default=object(),object(),object()
     channel=SimpleNamespace(id=77,edit=AsyncMock())
     guild=SimpleNamespace(default_role=default,me=bot,get_role=roles.get,get_channel=lambda ident:channel if ident==77 else None,text_channels=[],create_text_channel=AsyncMock())
@@ -138,7 +135,7 @@ async def test_existing_ticket_repairs_overwrites(db,core,buyer):
     assert overwrites[default].view_channel is False
     assert overwrites[customer].view_channel is True
     assert all(overwrites[role].view_channel for role in roles.values())
-    assert len(overwrites)==5
+    assert len(overwrites)==4
     guild.create_text_channel.assert_not_awaited()
 
 

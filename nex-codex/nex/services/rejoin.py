@@ -6,7 +6,7 @@ from ..security import Actor
 
 
 def exempt(bot, member, cfg):
-    return (member.bot or member.id in bot.config.owner_ids or member.id==member.guild.owner_id or member.guild_permissions.administrator or bool({r.id for r in member.roles}.intersection(cfg['staff_roles']+cfg['payment_roles'])))
+    return (member.bot or member.id in bot.config.owner_ids or member.id==member.guild.owner_id or member.guild_permissions.administrator or bool({r.id for r in member.roles}.intersection(cfg['staff_roles'])))
 
 
 def remember(bot,member,cfg):

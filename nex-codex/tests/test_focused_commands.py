@@ -26,8 +26,8 @@ def test_nonowners_cannot_change_products(core,market,paid,who):
 @pytest.mark.parametrize('user_id,administrator',[(100,False),(101,True),(102,False),(200,False)])
 async def test_management_command_checks_prefix_and_slash(db,core,tmp_path,user_id,administrator):
     bot=await new_bot(db,tmp_path)
-    owner_names=['addproduct','productedit','productpublish','createshop','shopsetup','productid','sync']
-    admin_names=['welcome','leave','prefix','configure','setup','paymentsetup','diagnostics','installemojis','welcomesetup','leavesetup','channelsetup','ticketsetup','giveawaysetup','rejoinallow']
+    owner_names=['orderfulfill','addproduct','productedit','productpublish','createshop','shopsetup','productid','sync']
+    admin_names=['welcome','leave','prefix','configure','setup','diagnostics','installemojis','welcomesetup','leavesetup','channelsetup','ticketsetup','giveawaysetup','rejoinallow']
     for name in owner_names+admin_names:
         command=bot.get_command(name)
         ctx=SimpleNamespace(bot=bot,command=command,interaction=None,guild=SimpleNamespace(id=1000),author=SimpleNamespace(id=user_id,guild_permissions=discord.Permissions(administrator=administrator)))

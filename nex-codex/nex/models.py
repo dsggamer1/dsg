@@ -57,7 +57,7 @@ class Order(Base):
     product_id: Mapped[str] = mapped_column(ForeignKey('products.id'))
     amount: Mapped[int] = mapped_column(Integer)
     currency: Mapped[str] = mapped_column(String(3))
-    state: Mapped[str] = mapped_column(String(30), default='pending_payment', index=True)
+    state: Mapped[str] = mapped_column(String(30), default='awaiting_staff', index=True)
     request_key: Mapped[str] = mapped_column(String(80))
     snapshot: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
@@ -78,17 +78,6 @@ class Ticket(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
-class Payment(Base):
-    __tablename__ = 'payments'
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    order_id: Mapped[str] = mapped_column(ForeignKey('orders.id'), index=True)
-    screenshot: Mapped[str] = mapped_column(Text)
-    reference: Mapped[str] = mapped_column(String(120), default='')
-    state: Mapped[str] = mapped_column(String(20), default='submitted')
-    reviewer_id: Mapped[int | None] = mapped_column(BigInteger)
-    reason: Mapped[str] = mapped_column(String(500), default='')
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class Entitlement(Base):

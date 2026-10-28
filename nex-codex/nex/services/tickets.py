@@ -56,7 +56,7 @@ class Tickets:
             raise DomainError('This ticket is closed. Ask staff to reopen it.')
         with self.db.sessions() as s:
             cfg = config(s, actor.guild_id)
-        roles = [guild.get_role(r) for r in set(cfg['staff_roles'] + cfg['payment_roles'])]
+        roles = [guild.get_role(r) for r in set(cfg['staff_roles'])]
         if any(role is None for role in roles):
             raise DomainError('A configured ticket role no longer exists.')
         # Recover a channel created before a process crash, identified by its immutable ticket ID.

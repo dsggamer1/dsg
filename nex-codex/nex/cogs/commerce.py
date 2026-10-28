@@ -165,10 +165,8 @@ class Commerce(commands.Cog):
         async with lock:
             _, channel = await self.bot.tickets.open(a, guild, customer, 'purchase', order.id)
         cfg = self.bot.core.config(guild.id)
-        item = themed_embed('ticket', 'Manual payment • staff verification required', f'Order: `{order.id}`\nAmount: **{order.currency} {order.amount/100:.2f}**\nPayee: {cfg["payee"]}\nUPI: `{cfg["upi_id"]}`\n\n{cfg["payment_instructions"]}\n\nUpload your receipt with `/payment`. A screenshot alone is not proof of payment. Staff will independently check the transaction.', config=cfg)
-        if cfg['qr_url']:
-            item.set_image(url=cfg['qr_url'])
-        await send_card(channel.send, item, key='payment', channel=channel, content=f'<@{customer.id}>')
+        item = themed_embed('ticket', 'Your private order workspace', f'Order: `{order.id}`\nProduct: **{order.snapshot["name"]}**\nListed price: **{order.currency} {order.amount/100:.2f}**\n\nDiscuss your request with staff here. The bot does not collect or verify payments. Product access stays locked until the bot owner releases this order.', config=cfg)
+        await send_card(channel.send, item, key='ticket', channel=channel, content=f'<@{customer.id}>')
         await send_card(reply, themed_embed('ticket', 'Purchase ticket ready', f'Continue in {channel.mention}. Order `{order.id}`', config=cfg), key='ticket', channel=channel, ephemeral=True)
 
     @commands.hybrid_command(help='Open a support or appeal ticket; resume a purchase with its order ID.')
@@ -207,35 +205,20 @@ class Commerce(commands.Cog):
         await ctx.author.send(file=discord.File(io.BytesIO('\n\n'.join(reversed(lines)).encode()), filename=f'ticket-{row.id}.txt'))
         await respond(ctx, 'Transcript sent', 'Sent privately to your DMs. Attachment URLs may expire.')
 
-    @commands.hybrid_command(help='Submit a receipt inside your purchase ticket. Staff must verify it.')
-    @commands.guild_only()
-    @commands.cooldown(3, 60, commands.BucketType.user)
-    async def payment(self, ctx, order_id: str, screenshot: discord.Attachment, reference: str = ''):
-        if screenshot.size > 8 * 1024 * 1024 or screenshot.content_type not in ('image/png', 'image/jpeg', 'image/webp'):
-            raise DomainError('Upload a PNG, JPEG or WebP screenshot up to 8 MB.')
-        with self.bot.db.sessions() as s:
-            ticket = s.scalar(select(Ticket).where(Ticket.order_id == order_id, Ticket.guild_id == ctx.guild.id, Ticket.channel_id == ctx.channel.id, Ticket.user_id == ctx.author.id, Ticket.state == 'open'))
-            if not ticket:
-                raise DomainError('Submit payment inside your open purchase ticket.')
-        self.bot.market.submit_payment(actor(ctx), order_id, screenshot.url, reference)
-        cfg = self.bot.core.config(ctx.guild.id)
-        roles = [discord.Object(id=r) for r in cfg['payment_roles']]
-        await send_card(ctx.send, themed_embed('ticket', 'Payment review requested', f'Order `{order_id}`\nReceipt submitted. Staff must check the actual transaction before approval.', config=cfg), key='payment', channel=ctx.channel, content=' '.join(f'<@&{r.id}>' for r in roles), allowed_mentions=discord.AllowedMentions(roles=roles))
 
-    @commands.hybrid_command(help='Approve or reject a submitted payment after independent verification.')
+
+    @commands.hybrid_command(extras={'owner_only': True}, help='Release product access for a manually handled order (bot owner).')
+    @owner_only()
     @commands.guild_only()
-    @commands.cooldown(5, 60, commands.BucketType.user)
-    async def paymentreview(self, ctx, order_id: str, approve: bool, reason: str = ''):
-        actor(ctx).require(self.bot.core.config(ctx.guild.id), 'payment')
-        if approve and not await confirm(ctx, 'Have you independently verified this exact payment? Approval enables delivery.'):
+    async def orderfulfill(self, ctx, order_id: str, *, reason: str):
+        actor(ctx).require_owner()
+        if not await confirm(ctx, 'Release product access for this order? This does not send the product yet.'):
             return
-        fresh = await ctx.guild.fetch_member(ctx.author.id)
-        from ..security import Actor
-        a = Actor(fresh.id, ctx.guild.id, frozenset(r.id for r in fresh.roles), fresh.guild_permissions.administrator, fresh.id in self.bot.config.owner_ids)
-        order = self.bot.market.review_payment(a, order_id, approve, reason)
-        await respond(ctx, 'Payment decision recorded', f'Order `{order.id}` • {order.state}')
+        # Recheck the configured bot owner at the mutation boundary.
+        self.bot.market.fulfill(actor(ctx), order_id, reason)
+        await respond(ctx, 'Product access released', f'Order `{order_id}` is ready. The customer can use `/deliver order_id: {order_id}` with DMs open.')
 
-    @commands.hybrid_command(help='Retrieve an entitled product privately; after a free claim or verified payment.')
+    @commands.hybrid_command(help='Retrieve an entitled product privately; after a free claim or owner release.')
     @commands.guild_only()
     @commands.cooldown(3, 60, commands.BucketType.user)
     async def deliver(self, ctx, order_id: str):
@@ -262,11 +245,11 @@ class Commerce(commands.Cog):
         else:
             await respond(ctx, 'Your orders', '\n'.join(lines) or 'No orders yet.')
 
-    @commands.hybrid_command(help='Record a manual cancellation or completed external refund (staff).')
+    @commands.hybrid_command(help='Cancel an order and revoke its delivery access (staff).')
     @commands.guild_only()
     async def orderstate(self, ctx, order_id: str, state: str, *, reason: str):
         self.bot.market.change_order(actor(ctx), order_id, state, reason)
-        await respond(ctx, 'Order updated', 'This command records a decision. It does not send money.')
+        await respond(ctx, 'Order updated', 'Order cancelled; its product access is revoked.')
 
 
 

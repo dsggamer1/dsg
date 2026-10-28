@@ -273,33 +273,6 @@ class Utility(commands.Cog):
         cfg = self.bot.core.config(ctx.guild.id)
         await send_card(ctx.send, guide_card('start', cfg), key='settings', channel=ctx.channel, view=GuideView(ctx.author.id,cfg), ephemeral=True)
 
-    @commands.hybrid_command(extras={'admin_only': True}, help='Set manual UPI/QR details and ticket roles using Discord selectors (owner or admin).')
-    @admin_or_owner()
-    @commands.guild_only()
-    async def paymentsetup(self, ctx, upi_id: str, payee: str, qr_url: str, staff_role: discord.Role, payment_role: discord.Role, ticket_category: discord.CategoryChannel, currency: str = 'INR'):
-        a = actor(ctx)
-        a.require_admin()
-        for role in (staff_role, payment_role):
-            if role.guild.id != ctx.guild.id or role.is_default():
-                raise DomainError('Choose a staff/reviewer role in this server; @everyone is not allowed.')
-        if ticket_category.guild.id != ctx.guild.id:
-            raise DomainError('Choose a ticket category in this server.')
-        if not upi_id.strip() or not payee.strip() or not qr_url.strip():
-            raise DomainError('Provide your UPI ID, payee name and HTTPS QR image URL.')
-        self.bot.limiter.check(('payment_setup', ctx.guild.id, ctx.author.id), 3, 60)
-        cfg = self.bot.core.config(ctx.guild.id)
-        cfg = self.bot.core.configure(a, {
-            'upi_id': upi_id.strip(), 'payee': payee.strip(), 'qr_url': qr_url.strip(), 'currency': currency.strip().upper(),
-            'staff_roles': list(dict.fromkeys([*cfg['staff_roles'], staff_role.id])),
-            'payment_roles': list(dict.fromkeys([*cfg['payment_roles'], payment_role.id])),
-            'ticket_category': ticket_category.id,
-        })
-        item = themed_embed('settings', 'Payment workspace ready', 'Manual QR/UPI details saved. Check the QR image below belongs to your account before opening sales.', config=cfg)
-        item.add_field(name='Payee / UPI', value=f"{cfg['payee']}\n`{cfg['upi_id']}`")
-        item.add_field(name='Currency', value=cfg['currency'])
-        item.add_field(name='Next step', value='Owner: /addproduct → /productedit for terms → /productpublish → /createshop. Run /setup for examples.', inline=False)
-        item.set_image(url=cfg['qr_url'])
-        await ctx.send(embed=item, ephemeral=True)
 
     @commands.hybrid_command(extras={'admin_only': True}, help='Check local command setup and channel permissions (owner or administrator).')
     @admin_or_owner()
@@ -390,7 +363,7 @@ class Utility(commands.Cog):
             raise DomainError('Choose a category and a non-everyone staff role in this server.')
         cfg=self.bot.core.config(ctx.guild.id)
         self.bot.core.configure(a,{'ticket_category':category.id,'staff_roles':list(dict.fromkeys([*cfg['staff_roles'],staff_role.id]))})
-        await respond(ctx,'Tickets configured','Support and purchase tickets will be private to customers and configured staff/reviewers.')
+        await respond(ctx,'Tickets configured','Support and purchase tickets will be private to customers and configured staff.')
 
     @commands.hybrid_command(extras={'admin_only': True}, help='Set the channel used for new giveaways.')
     @admin_or_owner()

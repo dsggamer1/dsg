@@ -36,7 +36,7 @@ class ProductInput(BaseModel):
         return self
 
 
-LEGACY_CONFIG_KEYS = frozenset(['ai_enabled', 'automod_action', 'automod_enabled', 'automod_exempt_roles', 'block_invites', 'blocked_domains', 'caps_percent', 'level_channel', 'level_rewards', 'leveling_enabled', 'mention_limit', 'referral_points', 'reviews_allow_free', 'rewards_enabled', 'security_enabled', 'security_exempt_users', 'security_threshold', 'security_window', 'self_roles', 'spam_count', 'spam_window', 'xp_cooldown'])
+LEGACY_CONFIG_KEYS = frozenset(['ai_enabled', 'automod_action', 'automod_enabled', 'automod_exempt_roles', 'block_invites', 'blocked_domains', 'caps_percent', 'level_channel', 'level_rewards', 'leveling_enabled', 'mention_limit', 'referral_points', 'reviews_allow_free', 'rewards_enabled', 'security_enabled', 'security_exempt_users', 'security_threshold', 'security_window', 'self_roles', 'spam_count', 'spam_window', 'xp_cooldown', 'payment_roles', 'upi_id', 'qr_url', 'payee', 'payment_instructions'])
 
 
 class GuildConfig(BaseModel):
@@ -47,7 +47,6 @@ class GuildConfig(BaseModel):
     shop_image: str = Field(default='', max_length=2000)
     emojis: dict[str, str] = Field(default_factory=dict, max_length=16)
     staff_roles: list[int] = Field(default_factory=list, max_length=20)
-    payment_roles: list[int] = Field(default_factory=list, max_length=20)
     ticket_category: int | None = None
     log_channel: int | None = None
     shop_channel: int | None = None
@@ -58,11 +57,7 @@ class GuildConfig(BaseModel):
     auto_role: int | None = None
     welcome_message: str = Field(default='Welcome {user} to {server}!', max_length=1000)
     leave_message: str = Field(default='{name} left {server}.', max_length=1000)
-    upi_id: str = Field(default='', max_length=100, pattern=r'^$|^[\w.\-]+@[\w.\-]+$')
-    qr_url: str = Field(default='', max_length=2000)
-    payee: str = Field(default='', max_length=100)
     currency: str = Field(default='INR', pattern=r'^[A-Z]{3}$')
-    payment_instructions: str = Field(default='Pay the exact amount and upload your receipt. Staff will verify it manually.', max_length=1500)
     free_claim_limit: int = Field(default=10, ge=1, le=1000)
     free_claim_cooldown: int = Field(default=3600, ge=0, le=31536000)
 
@@ -72,14 +67,14 @@ class GuildConfig(BaseModel):
         from .utils.theme import validate_emojis
         return validate_emojis(values)
 
-    @field_validator('qr_url', 'shop_image')
+    @field_validator('shop_image')
     @classmethod
-    def qr(cls, v):
+    def image_url(cls, v):
         return safe_https(v) if v else v
 
     @model_validator(mode='after')
     def discord_ids(self):
-        ids = self.staff_roles + self.payment_roles
+        ids = list(self.staff_roles)
         ids += [x for x in (self.ticket_category,self.log_channel,self.shop_channel,self.giveaway_channel,self.welcome_channel,self.leave_channel,self.auto_role) if x is not None]
         if any(not 0 < value < 2**63 for value in ids):
             raise ValueError('Discord IDs must be positive 64-bit integers.')

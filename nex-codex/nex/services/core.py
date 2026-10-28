@@ -26,11 +26,11 @@ class Core:
         actor.require_admin()
         with self.db.transaction() as s:
             value = GuildConfig.model_validate(config(s, actor.guild_id) | changes).model_dump()
-            if actor.guild_id in value['staff_roles'] + value['payment_roles']:
-                raise DomainError('The everyone role cannot be used for staff or payment review.')
+            if actor.guild_id in value['staff_roles']:
+                raise DomainError('The everyone role cannot be used for staff.')
             automatic_roles = {value['auto_role']}
-            if automatic_roles.intersection(value['staff_roles'] + value['payment_roles']):
-                raise DomainError('Staff and payment roles cannot be auto-role rewards.')
+            if automatic_roles.intersection(value['staff_roles']):
+                raise DomainError('Staff roles cannot be auto-role rewards.')
             row = s.get(Guild, actor.guild_id)
             if row:
                 row.settings = value

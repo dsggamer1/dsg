@@ -19,7 +19,7 @@ class Database:
         if inspect(self.engine).has_table('schema_version'):
             with self.engine.connect() as conn:
                 version=conn.execute(text('SELECT version FROM schema_version WHERE id=1')).scalar()
-                if version not in (None,1,2):
+                if version not in (None,1,2,3):
                     raise RuntimeError('Unsupported schema version')
         Base.metadata.create_all(self.engine)
         with self.transaction() as session:
@@ -38,10 +38,15 @@ class Database:
             session.execute(text("UPDATE products SET category='bot' WHERE category='source'"))
             session.execute(text('CREATE UNIQUE INDEX IF NOT EXISTS uq_product_guild_code ON products (guild_id, code)'))
             version=session.get(SchemaVersion,1)
+            if not version or version.version < 3:
+                # Retain already granted access; pending legacy orders never unlock here.
+                session.execute(text("UPDATE orders SET state='ready' WHERE state='paid' AND EXISTS (SELECT 1 FROM entitlements WHERE entitlements.order_id=orders.id)"))
+                session.execute(text("UPDATE orders SET state='awaiting_staff' WHERE state IN ('pending_payment','payment_submitted','verification_required','rejected','paid')"))
+                session.execute(text("UPDATE orders SET state='cancelled' WHERE state='manually_refunded'"))
             if not version:
-                session.add(SchemaVersion(id=1,version=2))
+                session.add(SchemaVersion(id=1,version=3))
             else:
-                version.version=2
+                version.version=3
 
     @contextmanager
     def transaction(self):
@@ -63,4 +68,4 @@ class Database:
 if __name__ == '__main__':
     from .config import settings
     Database(settings().database_url).initialize()
-    print('NEX CODEX schema v2 ready')
+    print('NEX CODEX schema v3 ready')

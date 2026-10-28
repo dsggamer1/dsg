@@ -7,7 +7,6 @@ CARDS = {
     'shop': ('commerce', 'cart', 'Find your next beginning.', 'THE NEX CODEX COLLECTION', 'TEMPLATES  /  SOURCE CODE'),
     'product': ('commerce', 'product', 'Made for your next idea.', 'PRODUCT SPOTLIGHT', 'EXPLORE  /  CONFIRM  /  RECEIVE'),
     'ticket': ('home', 'ticket', 'A little help. A human touch.', 'PRIVATE SUPPORT', 'YOUR SPACE TO ASK'),
-    'payment': ('commerce', 'rupee', 'Clear steps. Personal review.', 'MANUAL QR / UPI', 'PAY  /  SUBMIT  /  STAFF VERIFY'),
     'giveaway': ('community', 'gift', 'Something worth sharing.', 'COMMUNITY GIVEAWAY', 'ONE COMMUNITY  /  ONE MOMENT'),
     'welcome': ('utility', 'welcome', 'You belong here.', 'WELCOME TO THE COMMUNITY', 'MAKE YOURSELF AT HOME'),
     'leave': ('utility', 'leave', 'Until we meet again.', 'A COMMUNITY FAREWELL', 'THANKS FOR BEING HERE'),

@@ -49,7 +49,7 @@ class Events(commands.Cog):
         item = themed_embed('help', 'Hey, I’m NEX CODEX', 'Your community, connected. Explore commands, discover server templates and bot source code, or open a private support ticket.', config=cfg)
         item.add_field(name='Start here', value=f"`/help` or `{discord.utils.escape_markdown(cfg['prefix'])}help` • `/shop` • `/ticket`", inline=False)
         if message.author.id in self.bot.config.owner_ids or message.author.guild_permissions.administrator:
-            item.add_field(name='Your workspace', value='`/setup` opens the step-by-step guide. `/paymentsetup` configures QR/UPI and ticket roles.', inline=False)
+            item.add_field(name='Your workspace', value='`/setup` opens the step-by-step guide. `/ticketsetup` configures your support category and staff role.', inline=False)
         try:
             await send_card(message.reply, item, key='help', channel=message.channel, view=IntroView(message.author.id,cfg), mention_author=False, allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException:
@@ -77,7 +77,7 @@ class Events(commands.Cog):
         role = member.guild.get_role(cfg['auto_role'])
         if role:
             try:
-                safe_role(member.guild, None, role, cfg['staff_roles'] + cfg['payment_roles'])
+                safe_role(member.guild, None, role, cfg['staff_roles'])
                 await member.add_roles(role, reason='Configured welcome role')
             except (discord.HTTPException, DomainError):
                 await self.log(member.guild, 'Auto-role unavailable', 'Check the configured role and bot hierarchy.')

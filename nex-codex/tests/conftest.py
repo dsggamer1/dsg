@@ -29,7 +29,7 @@ def buyer():
 @pytest.fixture
 def core(db, owner):
     service = Core(db)
-    service.configure(owner, {'staff_roles': [20], 'payment_roles': [30], 'upi_id': 'synthetic@example', 'qr_url': 'https://example.com/test-qr.png', 'payee': 'Synthetic test payee', 'free_claim_cooldown': 0})
+    service.configure(owner, {'staff_roles': [20], 'free_claim_cooldown': 0})
     return service
 
 

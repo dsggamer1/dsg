@@ -1,34 +1,26 @@
 # NEX CODEX — Owner ka complete setup guide
 
-Slash command type karo, phir Discord ke named fields fill karo. Neeche `PRODUCT_ID`, `ORDER_ID`, `YOUR_UPI_ID`, etc. placeholders hain—apni value daalo. `<...>` ya placeholder text literally paste mat karo.
+Slash command type karo, phir Discord ke named fields fill karo. Neeche `PRODUCT_ID`, `ORDER_ID`, etc. placeholders hain—apni value daalo. `<...>` ya placeholder text literally paste mat karo.
 
 ## 1. Owner bano
 
-`.env` mein `OWNER_IDS=[APNI_NUMERIC_DISCORD_USER_ID]` set karo aur bot restart karo. Yeh **user ID** hai, role/server ID nahi. Bot owner product aur shop manage kar sakta hai. Server Administrator payment/server configuration kar sakta hai. Staff role se product ownership nahi milti.
+`.env` mein `OWNER_IDS=[APNI_NUMERIC_DISCORD_USER_ID]` set karo aur bot restart karo. Yeh **user ID** hai, role/server ID nahi. Bot owner product aur shop manage kar sakta hai. Server Administrator server configuration kar sakta hai. Staff role se product ownership nahi milti.
 
 Bot ko View Channels, Send Messages, Embed Links, Attach Files, Read Message History aur ticket creation ke liye Manage Channels chahiye. Developer Portal mein Server Members aur Message Content intents enable karo.
 
-## 2. Payment aur ticket setup — ek command
+## 2. Ticket setup
 
-Discord mein pehle `Support`, `Payment Reviewers` roles aur `Tickets` category banao. Trusted people ko roles do. Phir:
+Discord mein `Support` role aur `Tickets` category banao. Trusted people ko role do. Phir:
 
 ```text
-/paymentsetup
-  upi_id: YOUR_UPI_ID
-  payee: YOUR_PAYEE_NAME
-  qr_url: YOUR_HTTPS_QR_IMAGE_URL
-  staff_role: @Support
-  payment_role: @Payment Reviewers
-  ticket_category: Tickets
-  currency: INR
+/ticketsetup category: Tickets staff_role: @Support
 ```
 
-- UPI ID aur QR apne payment app se lo. Bot koi payment details invent nahi karta.
-- QR URL HTTPS image URL honi chahiye; preview mein apna QR check karo.
-- Command selected staff/reviewer roles ko existing lists mein add karta hai. @everyone allowed nahi.
-- Existing staff role remove karna ho: `/configure key: staff_roles value: [ROLE_ID]` se complete desired list save karo. Payment reviewers ke liye key `payment_roles`.
-- Instructions change: `/configure key: payment_instructions value: "Pay exact amount; receipt yahin submit karein."`
-- Currency new products par apply hoti hai; old prices/orders automatically convert nahi hote.
+- Customer, bot aur configured staff ko private ticket dikhega. @everyone allowed nahi.
+- Command staff role ko existing list mein add karta hai.
+- Complete staff list replace: `/configure key: staff_roles value: [ROLE_ID]`.
+- Currency new products ke liye: `/configure key: currency value: "INR"`. Existing prices/orders convert nahi hote.
+- Payment system nahi hai: QR/UPI, receipts, verification aur refund commands removed hain.
 
 ## 3. Product add karo — owner only
 
@@ -119,19 +111,17 @@ Naye product ko short 8-character ID milti hai. `/productpublish`, `/productedit
 
 3–16 lowercase letters/numbers, hyphen ya underscore. Old orders safe rehte hain. Internal database/order IDs change nahi hote. Categories sirf **template / bot** hain; old source category update mein bot ho jaati hai.
 
-## 4. Customer purchase aur payment review
+## 4. Customer order aur owner delivery release
 
 1. Customer `/shop` khole → product select → Confirm purchase.
-2. Private purchase ticket mein **Order ID**, exact amount, UPI, QR aur instructions dikhenge.
-3. Customer independently payment kare.
-4. Usi ticket mein `/payment order_id: ORDER_ID screenshot: ATTACH_IMAGE reference: OPTIONAL_REFERENCE`.
-5. Authorized reviewer apne payment/bank app mein actual transaction check kare.
-6. Approve: `/paymentreview order_id: ORDER_ID approve: true` → confirmation. Reject: `approve: false reason: REASON`.
-7. Customer `/deliver order_id: ORDER_ID` kare. Product DM mein jayega; DMs open hone chahiye.
+2. Private purchase ticket automatic banega; Order ID, product aur listed price dikhega.
+3. Customer aur staff ticket mein request handle karenge. Bot payment collect, record ya verify nahi karta.
+4. Product access release karne ke liye **OWNER_IDS wala owner**: `/orderfulfill order_id: ORDER_ID reason: Request complete` → confirmation.
+5. Customer `/deliver order_id: ORDER_ID` kare. Product DM mein jayega; DMs open hone chahiye.
 
-Screenshot se automatic approval nahi hota. Customer apna payment approve nahi kar sakta, chahe owner ho. Apne account se test purchase karoge toh doosra authorized reviewer chahiye. Duplicate approvals aur unauthorized delivery blocked hain.
+Priced order `awaiting_staff` mein locked rehta hai; release ke baad `ready`, successful send ke baad `delivered`. Owner release payment approval nahi hai. Admin/staff role alone se product access release nahi hota. Duplicate release blocked hai.
 
-Free products: confirm claim → entitlement save → `/deliver`. Payment step skip hota hai. `/orders` se Order ID dobara mil sakta hai. Product ID aur Order ID alag hain.
+Free products: confirm claim → entitlement save (`ready`) → `/deliver`. `/orders` se Order ID dobara milega. Cancel/revoke: `/orderstate order_id: ORDER_ID state: cancelled reason: REASON`. Yeh access revoke karta hai, koi transaction nahi karta.
 
 ## 5. Community setup
 
@@ -156,7 +146,7 @@ Welcome/leave placeholders: `{user}`, `{name}`, `{server}`. Disable: `/welcome e
 /giveawaysetup channel: #giveaways
 ```
 
-Shop setup/product changes OWNER_IDS only; other setup owner/admin. `/paymentsetup` remains QR/UPI setup. Confirm purchase par private ticket automatic banega; manually /ticket chalana required nahi (sirf recovery ke liye).
+Shop setup/product changes OWNER_IDS only; other setup owner/admin. Confirm purchase par private ticket automatic banega; manually /ticket chalana required nahi (sirf recovery ke liye).
 
 ```text
 /kick member: @user reason: REASON
@@ -169,11 +159,11 @@ Shop setup/product changes OWNER_IDS only; other setup owner/admin. `/paymentset
 /warnings member: @user
 ```
 
-Actual Discord permissions required (Kick/Ban/Moderate Members/Manage Roles). Bot aur moderator role target se upar honi chahiye. Kick/ban confirmation maangte hain; warnings persist. Privileged/staff/payment/managed roles safe role command se assign/remove nahi hote.
+Actual Discord permissions required (Kick/Ban/Moderate Members/Manage Roles). Bot aur moderator role target se upar honi chahiye. Kick/ban confirmation maangte hain; warnings persist. Privileged/staff/managed roles safe role command se assign/remove nahi hote.
 
 ### Optional leave/rejoin rule
 
-`/leavesetup restrict_rejoin: true` enable karo toh jo member uske baad leave kare, uski ID save hogi aur wapis join par kick milega. Default false. Owners/admins/configured staff/reviewers/bots exempt. Bot ko Kick Members aur target se upar role chahiye. Leave event mein moderation kick bhi include ho sakta hai; yeh abuse detection nahi hai. Existing saved IDs re-enable karne par apply honge.
+`/leavesetup restrict_rejoin: true` enable karo toh jo member uske baad leave kare, uski ID save hogi aur wapis join par kick milega. Default false. Owners/admins/configured staff/bots exempt. Bot ko Kick Members aur target se upar role chahiye. Leave event mein moderation kick bhi include ho sakta hai; yeh abuse detection nahi hai. Existing saved IDs re-enable karne par apply honge.
 
 `/rejoinallow user_id: NUMERIC_ID` kisi user ka block clear karega. `/leavesetup restrict_rejoin: false` enforcement band karega. No automatic ban. Serious restrictions review karna staff ka kaam hai.
 
@@ -186,13 +176,12 @@ Actual Discord permissions required (Kick/Ban/Moderate Members/Manage Roles). Bo
 | `/product` | product_id: inspect details | Members |
 | `/buy` | product_id: confirm order/free claim | Members |
 | `/orders` | Optional page: your order IDs/status | Members |
+| `/orderfulfill` | order_id, reason; confirmation releases access | Configured bot owner |
 | `/deliver` | order_id: entitled private delivery | Customer |
 | `/ticket` | category: support/appeal; order_id to resume a purchase | Members |
-| `/payment` | order_id, screenshot, optional reference; inside purchase ticket | Customer |
-| `/paymentreview` | order_id, approve, rejection reason | Reviewer/admin/owner; never own order |
 | `/ticketmanage` | ticket_id, action: claim/unclaim/close/reopen | Staff/admin/owner |
 | `/transcript` | Inside ticket; sends last 500 messages privately | Staff/admin/owner |
-| `/orderstate` | order_id, state: cancelled/manually_refunded, reason | Staff/admin/owner |
+| `/orderstate` | order_id, state: cancelled, reason | Staff/admin/owner |
 | `/say` | message, optional channel | Staff/admin/owner |
 | `/broadcast` | title, message, optional channel | Staff/admin/owner |
 | `/giveaway` | prize, minutes, optional winners | Staff/admin/owner |
@@ -201,8 +190,7 @@ Actual Discord permissions required (Kick/Ban/Moderate Members/Manage Roles). Bo
 | `/leave` | channel, enabled, message | Owner/admin |
 | `/prefix` | prefix: new text-command prefix | Owner/admin |
 | `/configure` | key, value: validated JSON setting | Owner/admin |
-| `/setup` | Interactive guide: start/products/payments/community | Owner/admin |
-| `/paymentsetup` | UPI/payee/QR, staff role, reviewer role, ticket category, currency | Owner/admin |
+| `/setup` | Interactive guide: start/products/tickets/community | Owner/admin |
 | `/diagnostics` | Command/prefix/channel-permission checklist | Owner/admin |
 | `/installemojis` | Optional server emoji override; startup already auto-loads application emojis | Owner/admin |
 | `/addproduct` | name, category, price, delivery, description | Configured bot owner |
@@ -222,13 +210,13 @@ Actual Discord permissions required (Kick/Ban/Moderate Members/Manage Roles). Bo
 | `/giverole`, `/takerole` | member, role | Discord Manage Roles |
 | `!sync` | Hidden prefix-only registration retry (use your configured prefix) | Configured bot owner |
 
-`orderstate` records a manual decision; it never transfers/refunds money. Ticket IDs appear in the ticket response/channel topic; Giveaway IDs appear in giveaway footers.
+`orderstate` cancels the order and revokes delivery access. Ticket IDs appear in the ticket response/channel topic; Giveaway IDs appear in giveaway footers.
 
 ## 8. Theme, buttons aur mention reply
 
 - Bot ko directly mention karo: branded reply with Explore commands / Browse shop buttons. Bots/webhooks, everyone-only mentions and normal mention-prefix commands don't cause duplicate greetings. Rate limits apply.
 - Help ke real buttons Discord image ke **neeche** hain. Image/GIF pixels clickable nahi hote. Help has Previous/Home/Next plus Shop and, when allowed, Setup guide.
-- Matching cyan/blue artwork covers shop/products, support, payment receipts, welcome/leave, announcements, giveaway and setup. QR/shop custom images take precedence. Keep **all** `nex/assets/` folders when hosting.
+- Matching cyan/blue artwork covers shop/products, support, welcome/leave, announcements, giveaway and setup. Shop custom images take precedence. Keep **all** `nex/assets/` folders when hosting.
 - Attach Files missing ho toh messages text/embed form mein work karte hain. Compact status/error embeds retain the same color/branding; `/say` stays plain text.
 
 ## Run

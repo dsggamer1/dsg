@@ -63,7 +63,7 @@ async def confirm(ctx, title):
 
 def safe_role(guild, member, role, protected_roles=()):
     if role.id in protected_roles:
-        raise DomainError('Staff and payment-review roles cannot be assigned with this utility.')
+        raise DomainError('Staff roles cannot be assigned with this utility.')
     if role.is_default() or role.managed or role >= guild.me.top_role:
         raise DomainError('This role cannot be assigned by the bot.')
     permissions = role.permissions

@@ -29,7 +29,7 @@ PAGES = {
   ('code','Bot source code','Start building your next idea.'),
   ('cart','Shop & checkout','Browse, confirm & track your order.'),
   ('ticket','Private tickets','Support with your order attached.'),
-  ('rupee','Manual QR / UPI','A real person verifies each payment.'),
+  ('shield','Private orders','Personal support. Owner-released delivery.'),
   ('download','Protected delivery','Available to entitled customers.')]),
  'community': ('Make someone\'s day', 'A prize, a little anticipation, a moment to share.', [
   ('gift','Create a giveaway','Staff choose the prize & duration.'),

@@ -33,7 +33,7 @@ def test_archive_excludes_local_credentials_and_runtime_data(tmp_path):
         assert z.read('NEX_CODEX/nex/assets/emojis/nex_cart.png').startswith(b'\x89PNG\r\n\x1a\n')
         assert len([n for n in z.namelist() if n.startswith('NEX_CODEX/nex/assets/help/') and n.endswith('.gif')])==5
         assert z.read('NEX_CODEX/nex/assets/help/home.gif').startswith(b'GIF89a')
-        assert len([n for n in z.namelist() if n.startswith('NEX_CODEX/nex/assets/cards/') and n.endswith('.png')])==10
+        assert len([n for n in z.namelist() if n.startswith('NEX_CODEX/nex/assets/cards/') and n.endswith('.png')])==9
         assert z.read('NEX_CODEX/nex/assets/cards/shop.png').startswith(b'\x89PNG\r\n\x1a\n')
         assert not any(b'PRIVATE_SENTINEL' in z.read(name) or b'synthetic-local-only' in z.read(name) for name in z.namelist() if not name.startswith('NEX_CODEX/tests/'))
         assert all(not name.startswith('/') and '..' not in Path(name).parts for name in z.namelist())
