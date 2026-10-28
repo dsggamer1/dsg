@@ -39,6 +39,10 @@ class ProductInput(BaseModel):
 class GuildConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     prefix: str = Field(default='!', min_length=1, max_length=5)
+    shop_title: str = Field(default='NEX CODEX • The collection', min_length=1, max_length=120)
+    shop_description: str = Field(default='Discover server templates and bot source code. Browse products, review terms, and order privately.', min_length=1, max_length=1000)
+    shop_image: str = Field(default='', max_length=2000)
+    emojis: dict[str, str] = Field(default_factory=dict, max_length=16)
     staff_roles: list[int] = Field(default_factory=list, max_length=20)
     payment_roles: list[int] = Field(default_factory=list, max_length=20)
     ticket_category: int | None = None
@@ -78,7 +82,13 @@ class GuildConfig(BaseModel):
     free_claim_cooldown: int = Field(default=3600, ge=0, le=31536000)
     ai_enabled: bool = False
 
-    @field_validator('qr_url')
+    @field_validator('emojis')
+    @classmethod
+    def emoji_values(cls, values):
+        from .utils.theme import validate_emojis
+        return validate_emojis(values)
+
+    @field_validator('qr_url', 'shop_image')
     @classmethod
     def qr(cls, v):
         return safe_https(v) if v else v

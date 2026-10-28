@@ -17,7 +17,7 @@ if not url or make_url(url).database != 'nex_test':
     raise SystemExit('Set NEX_POSTGRES_TEST_URL to a dedicated PostgreSQL database named nex_test. This creates synthetic test records.')
 db=Database(url)
 db.initialize()
-admin=Actor(100,1000,administrator=True)
+admin=Actor(100,1000,administrator=True,owner=True)
 buyer=Actor(200,1000)
 Core(db).configure(admin,{'upi_id':'synthetic@example','qr_url':'https://example.com/synthetic-qr.png','payee':'Synthetic test fixture'})
 market=Marketplace(db,Path('/tmp'))

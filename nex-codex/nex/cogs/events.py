@@ -1,21 +1,17 @@
-from collections import defaultdict, deque
-from datetime import timedelta
 import logging
 import discord
 from discord.ext import commands, tasks
 from sqlalchemy import select, delete
-from ..models import Audit, Entitlement, Giveaway, Reminder, Heartbeat, OAuthState, WebSession, now
+from ..models import Entitlement, Giveaway, Reminder, Heartbeat, OAuthState, WebSession, now
 from ..security import Actor, DomainError
 from ..services.core import audit
-from ..services.automod import Automod
 from ..utils.discord import embed, safe_role
+from ..utils.theme import themed_embed
 
 
 class Events(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.automod = Automod()
-        self.bursts = defaultdict(lambda: deque(maxlen=50))
 
     async def cog_load(self):
         self.worker.start()
@@ -40,7 +36,7 @@ class Events(commands.Cog):
         if channel:
             message = self.render(cfg['welcome_message'], member)
             try:
-                await channel.send(embed=embed('Welcome to the community', message))
+                await channel.send(embed=themed_embed('welcome', 'Welcome to the community', message, config=cfg))
             except discord.HTTPException:
                 pass
         role = member.guild.get_role(cfg['auto_role'])
@@ -65,77 +61,10 @@ class Events(commands.Cog):
         channel = member.guild.get_channel(cfg['leave_channel'])
         if channel:
             try:
-                await channel.send(embed=embed('Member left', self.render(cfg['leave_message'], member)))
+                await channel.send(embed=themed_embed('leave', 'Member left', self.render(cfg['leave_message'], member), config=cfg))
             except discord.HTTPException:
                 pass
         await self.log(member.guild, 'Member left', f'{member.id} • {count} entitlement(s). Departure alone does not establish abuse.')
-
-    @commands.Cog.listener()
-    async def on_message(self, message):
-        if not message.guild or message.author.bot or not isinstance(message.author, discord.Member):
-            return
-        cfg = self.bot.core.config(message.guild.id)
-        exempt = message.author.guild_permissions.manage_messages or any(r.id in cfg['automod_exempt_roles'] for r in message.author.roles)
-        if cfg['automod_enabled'] and not exempt:
-            flags = self.automod.inspect(message.guild.id, message.author.id, message.content, len(message.mentions)+len(message.role_mentions)+(cfg['mention_limit'] if message.mention_everyone else 0), cfg)
-            if flags:
-                result = 'logged'
-                if cfg['automod_action'] == 'delete':
-                    try:
-                        await message.delete()
-                        result = 'deleted'
-                    except discord.HTTPException:
-                        result = 'delete_failed'
-                with self.bot.db.transaction() as s:
-                    audit(s, Actor(self.bot.user.id, message.guild.id), 'automod.'+result, message.author.id, flags=flags, message_id=message.id)
-                await self.log(message.guild, 'Automod signal', f'User {message.author.id}\n{", ".join(flags)} • {result}\nNo automatic ban or timeout.')
-                return
-        level = self.bot.community.xp(message.guild.id, message.author.id)
-        if level:
-            channel = message.guild.get_channel(cfg['level_channel'])
-            if channel:
-                try:
-                    await channel.send(embed=embed('Level up', f'{message.author.display_name} reached **level {level}**.'))
-                except discord.HTTPException:
-                    pass
-            role = message.guild.get_role(cfg['level_rewards'].get(str(level)))
-            if role:
-                try:
-                    safe_role(message.guild, None, role, cfg['staff_roles'] + cfg['payment_roles'])
-                    await message.author.add_roles(role, reason=f'Level {level} reward')
-                except (discord.HTTPException, DomainError):
-                    await self.log(message.guild, 'Level reward unavailable', f'Role assignment failed for level {level}.')
-
-    @commands.Cog.listener()
-    async def on_message_delete(self, message):
-        if message.guild and not message.author.bot:
-            await self.log(message.guild, 'Message deleted', f'Author {message.author.id} • channel {message.channel.id}\n{message.content[:1200] or "Content unavailable"}')
-
-    @commands.Cog.listener()
-    async def on_message_edit(self, before, after):
-        if after.guild and not after.author.bot and before.content != after.content:
-            await self.log(after.guild, 'Message edited', f'Author {after.author.id} • channel {after.channel.id}\nBefore: {before.content[:700]}\nAfter: {after.content[:700]}')
-
-    @commands.Cog.listener()
-    async def on_audit_log_entry_create(self, entry):
-        cfg = self.bot.core.config(entry.guild.id)
-        supported = {discord.AuditLogAction.channel_delete, discord.AuditLogAction.role_delete, discord.AuditLogAction.ban, discord.AuditLogAction.kick, discord.AuditLogAction.webhook_create}
-        if not cfg['security_enabled'] or entry.action not in supported or not entry.user_id:
-            return
-        if entry.user_id in {*cfg['security_exempt_users'], entry.guild.owner_id, self.bot.user.id}:
-            return
-        with self.bot.db.transaction() as s:
-            if s.scalar(select(Audit.id).where(Audit.guild_id == entry.guild.id, Audit.action == 'security.event', Audit.target == str(entry.id))):
-                return
-            audit(s, Actor(entry.user_id, entry.guild.id), 'security.event', entry.id, event=entry.action.name)
-            s.flush()
-            # Database-backed burst window survives restarts and duplicate gateway events.
-            recent = list(s.scalars(select(Audit.id).where(Audit.guild_id == entry.guild.id, Audit.actor_id == entry.user_id, Audit.action == 'security.event', Audit.created_at >= now()-timedelta(seconds=cfg['security_window']))))
-            incident = len(recent) >= cfg['security_threshold']
-            if incident:
-                audit(s, Actor(entry.user_id, entry.guild.id), 'security.incident', entry.id, count=len(recent), response='alert')
-        if incident:
-            await self.log(entry.guild, 'Security incident • review required', f'Actor {entry.user_id}: {len(recent)} destructive audit events in {cfg["security_window"]} seconds. Latest: {entry.action.name}. Review Discord audit logs and remove unsafe permissions if needed. Automatic rollback is not available.')
 
     @tasks.loop(seconds=30)
     async def worker(self):
@@ -168,7 +97,7 @@ class Events(commands.Cog):
             channel = self.bot.get_channel(giveaway.channel_id)
             if channel:
                 try:
-                    await channel.send(embed=embed('Giveaway complete', f'**{giveaway.prize}**\n' + (', '.join(f'<@{u}>' for u in giveaway.winners) or 'No eligible entries.')))
+                    await channel.send(embed=themed_embed('giveaway', 'Giveaway complete', f'**{giveaway.prize}**\n' + (', '.join(f'<@{u}>' for u in giveaway.winners) or 'No eligible entries.'), config=self.bot.core.config(giveaway.guild_id)))
                 except discord.HTTPException:
                     continue
                 with self.bot.db.transaction() as s:

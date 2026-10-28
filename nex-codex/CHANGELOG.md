@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.0 — 2026-10-28
+
+- Narrowed active commands to welcome/leave, tickets, giveaways, say/broadcast, products/shop and help, plus owner setup and the purchase/payment/delivery subflows.
+- Restricted product and configuration management to configured bot owners in Discord, service layer and dashboard; guild administrator/staff roles no longer grant those rights.
+- Added owner welcome/leave setup, previews and disable controls; staff announcement commands with mention suppression, rate limits and audits.
+- Added owner-only createshop with persistent public browse button and per-customer private storefronts.
+- Added configurable Unicode/custom emoji slots and focused help that hides owner controls from nonowners. Requested user emoji list not received; defaults retained pending input.
+- Removed active unrelated event processors and premium dashboard routes while preserving historical data and existing saved-work recovery.
+- Extended command, owner authorization, dashboard, announcement, welcome/leave, emoji and persistent-shop regression checks.
+
 ## 1.1.0 — 2026-10-28
 
 - Audited the complete source ZIP with isolated dependencies and Python 3.11/3.14 validation.

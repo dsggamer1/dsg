@@ -18,7 +18,11 @@ def actor(ctx):
 
 
 async def respond(ctx, title, text='', **kwargs):
-    return await ctx.send(embed=embed(title, text), ephemeral=True, **kwargs)
+    from .theme import themed_embed
+    bot = getattr(ctx, 'bot', None)
+    guild = getattr(ctx, 'guild', None)
+    cfg = bot.core.config(guild.id) if bot and guild else None
+    return await ctx.send(embed=themed_embed('success', title, text, config=cfg), ephemeral=True, **kwargs)
 
 
 class Confirm(discord.ui.View):
@@ -77,3 +81,11 @@ def price_minor(value):
         return int(amount * 100)
     except (InvalidOperation, ValueError, TypeError):
         raise DomainError('Use a price from 0 to 1000000 with at most two decimal places, for example 499.00.') from None
+
+
+def owner_only():
+    async def predicate(ctx):
+        if ctx.author.id not in ctx.bot.config.owner_ids:
+            raise DomainError('Only a bot owner configured in OWNER_IDS may use this command.')
+        return True
+    return commands.check(predicate)

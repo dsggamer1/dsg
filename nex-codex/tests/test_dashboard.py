@@ -16,7 +16,7 @@ from nex.security import Actor
 
 @pytest.fixture
 def web(db,tmp_path):
-    cfg=Settings(_env_file=None,session_secret='synthetic-test-secret-'*3,database_url=str(db.engine.url),product_root=tmp_path,discord_token='synthetic-bot-token')
+    cfg=Settings(_env_file=None,session_secret='synthetic-test-secret-'*3,database_url=str(db.engine.url),product_root=tmp_path,discord_token='synthetic-bot-token',owner_ids=[100])
     app=create_app(cfg,db)
     with TestClient(app) as client:
         yield app,client
@@ -40,7 +40,7 @@ def test_public_pages_and_real_empty_states(web):
     assert 'Good things are on the way' in c.get('/marketplace').text
 
 
-@pytest.mark.parametrize('url',['/servers','/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/orders','/guild/1000/payments','/guild/1000/premium','/guild/1000/download/unknown'])
+@pytest.mark.parametrize('url',['/servers','/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/orders','/guild/1000/payments','/guild/1000/download/unknown'])
 def test_protected_pages_require_login(web,url):
     assert web[1].get(url).status_code==401
 
@@ -65,8 +65,8 @@ def test_staff_pages_and_writes_with_mocked_live_membership(web,db,core,monkeypa
     app,c=web
     login(app,c,db,100)
     module=importlib.import_module('nex.dashboard.app')
-    monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=Actor(100,1000,administrator=True)))
-    for url in ('/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/products/edit','/guild/1000/orders','/guild/1000/payments','/guild/1000/premium'):
+    monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=Actor(100,1000,administrator=True,owner=True)))
+    for url in ('/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/products/edit','/guild/1000/orders','/guild/1000/payments'):
         r=c.get(url)
         assert r.status_code==200, (url,r.text)
     assert c.post('/guild/1000/settings',data={'csrf':'synthetic-csrf','configuration':'{"prefix":"?"}'}).status_code==200
@@ -81,15 +81,15 @@ def test_regular_member_cannot_manage(web,db,core,monkeypatch):
     login(app,c,db)
     module=importlib.import_module('nex.dashboard.app')
     monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=Actor(200,1000)))
-    for path in ('settings','products','payments','premium'):
+    for path in ('settings','products','payments'):
         assert c.get('/guild/1000/'+path).status_code==400
     assert c.post('/guild/1000/settings',data={'csrf':'synthetic-csrf','configuration':'{"staff_roles":[55]}'}).status_code==400
     assert core.config(1000)['staff_roles']==[20]
 
 
-def test_xss_escaped_and_private_delivery_not_public(web,db,market,admin,monkeypatch):
+def test_xss_escaped_and_private_delivery_not_public(web,db,market,owner,monkeypatch):
     app,c=web
-    p=market.save_product(admin,{'name':'<script>alert(1)</script>','category':'source','published':True,'delivery_value':'PRIVATE_DELIVERY_SENTINEL'})
+    p=market.save_product(owner,{'name':'<script>alert(1)</script>','category':'source','published':True,'delivery_value':'PRIVATE_DELIVERY_SENTINEL'})
     response=c.get('/marketplace/'+p.id)
     assert response.status_code==200
     assert '<script>alert(1)</script>' not in response.text
@@ -148,10 +148,10 @@ def test_session_expiry(web,db):
     assert c.get('/servers').status_code==401
 
 
-def test_request_body_bound_and_public_api_redaction(web,market,admin):
+def test_request_body_bound_and_public_api_redaction(web,market,owner):
     app,c=web
     assert c.post('/auth/logout',content=b'x'*65537).status_code==413
-    p=market.save_product(admin,{'name':'API product','category':'source','published':True,'delivery_value':'SECRET_DELIVERY'})
+    p=market.save_product(owner,{'name':'API product','category':'source','published':True,'delivery_value':'SECRET_DELIVERY'})
     payload=c.get('/api/products').json()
     assert payload['products'][0]['id']==p.id
     assert 'SECRET_DELIVERY' not in str(payload)
@@ -169,11 +169,11 @@ def test_hosting_removed_and_pagination_bounded(web):
     assert '>Hosting<' not in c.get('/').text
 
 
-def test_protected_file_delivery_and_refund(web,db,market,admin,buyer,tmp_path,monkeypatch):
+def test_protected_file_delivery_and_refund(web,db,market,owner,buyer,tmp_path,monkeypatch):
     from nex.models import Order
     app,c=web
     (tmp_path/'product.zip').write_bytes(b'synthetic source archive')
-    p=market.save_product(admin,{'name':'Private source','category':'source','published':True,'delivery_kind':'file','delivery_value':'product.zip'})
+    p=market.save_product(owner,{'name':'Private source','category':'source','published':True,'delivery_kind':'file','delivery_value':'product.zip'})
     order=market.order(buyer,p.id,'file-test')
     login(app,c,db)
     module=importlib.import_module('nex.dashboard.app')
@@ -188,9 +188,34 @@ def test_protected_file_delivery_and_refund(web,db,market,admin,buyer,tmp_path,m
     (tmp_path/'product.zip').unlink()
     assert c.get(f'/guild/1000/download/{order.id}').status_code==400
     # Paid refunds revoke future access even if the file is restored.
-    paid=market.save_product(admin,{'name':'Paid archive','category':'source','price':100,'published':True,'delivery_value':'private instructions'})
+    paid=market.save_product(owner,{'name':'Paid archive','category':'source','price':100,'published':True,'delivery_value':'private instructions'})
     paid_order=market.order(buyer,paid.id,'paid-file-test')
     market.submit_payment(buyer,paid_order.id,'https://cdn.discordapp.com/attachments/synthetic.png')
-    market.review_payment(admin,paid_order.id,True)
-    market.change_order(admin,paid_order.id,'manually_refunded','External refund checked')
+    market.review_payment(owner,paid_order.id,True)
+    market.change_order(owner,paid_order.id,'manually_refunded','External refund checked')
     assert c.get(f'/guild/1000/download/{paid_order.id}').status_code==400
+
+
+@pytest.mark.parametrize('who',[Actor(101,1000,administrator=True),Actor(102,1000,frozenset({20,30}))])
+def test_admin_and_staff_cannot_bypass_owner_management(web,db,core,paid,monkeypatch,who):
+    app,c=web
+    login(app,c,db,who.user_id)
+    module=importlib.import_module('nex.dashboard.app')
+    monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=who))
+    for path in ('settings','products','products/edit','products/edit?product_id='+paid.id):
+        response=c.get('/guild/1000/'+path)
+        assert response.status_code==400
+        assert 'Only a bot owner' in response.text
+    assert c.get('/api/guild/1000/settings').status_code==400
+    assert c.post('/guild/1000/settings',data={'csrf':'synthetic-csrf','configuration':'{"staff_roles":[999]}'}).status_code==400
+    assert c.post('/guild/1000/products',data={'csrf':'synthetic-csrf','product_id':paid.id,'name':'Unauthorized source','category':'source','price':'0','delivery_value':'x'}).status_code==400
+    assert core.config(1000)['staff_roles']==[20]
+    # Payment review access remains available to the configured reviewer/admin.
+    assert c.get('/guild/1000/payments').status_code==200
+    overview=c.get('/guild/1000').text
+    assert 'Configure server' not in overview and 'Manage products' not in overview
+
+
+def test_premium_routes_removed(web):
+    assert web[1].get('/guild/1000/premium').status_code==404
+    assert web[1].post('/guild/1000/premium').status_code==404

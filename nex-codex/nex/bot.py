@@ -12,6 +12,7 @@ from .services.tickets import Tickets
 from .services.community import Community
 from .security import DomainError, RateLimiter
 from .utils.discord import embed
+from .utils.theme import themed_embed
 from .models import Guild
 
 
@@ -43,13 +44,13 @@ class NexBot(commands.Bot):
         self.limiter = RateLimiter()
         self.ticket_locks = {}
         intents = discord.Intents.default()
-        intents.members = intents.message_content = intents.moderation = True
+        intents.members = intents.message_content = True
         super().__init__(command_prefix=prefix, intents=intents, help_command=None, allowed_mentions=discord.AllowedMentions.none(), owner_ids=set(self.config.owner_ids))
         self.before_invoke(self.prepare_command)
 
     async def setup_hook(self):
         self.db.initialize()
-        for extension in ('utility', 'moderation', 'commerce', 'community', 'events'):
+        for extension in ('utility', 'commerce', 'community', 'events'):
             await self.load_extension('nex.cogs.' + extension)
         if self.config.sync_commands:
             await self.publish_commands()
@@ -66,7 +67,7 @@ class NexBot(commands.Bot):
     async def prepare_command(self, ctx):
         # Discord needs an acknowledgment before slow network/file operations finish.
         if ctx.interaction and not ctx.interaction.response.is_done():
-            public = {'shop', 'product', 'avatar', 'serverinfo', 'poll', 'giveaway', 'leaderboard', 'roll'}
+            public = {'shop', 'product', 'giveaway'}
             await ctx.defer(ephemeral=ctx.command.name not in public)
 
 
@@ -90,7 +91,8 @@ class NexBot(commands.Bot):
         else:
             logging.getLogger('nex').error('command.failed type=%s command=%s', type(error).__name__, ctx.command)
             message = 'The action could not be completed. Contact the bot owner.'
-        await ctx.send(embed=embed('Action unavailable', message, error=True), ephemeral=True)
+        cfg = self.core.config(ctx.guild.id) if ctx.guild else None
+        await ctx.send(embed=themed_embed('error', 'Action unavailable', message, config=cfg, error=True), ephemeral=True)
 
 
 async def main():

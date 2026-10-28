@@ -11,7 +11,7 @@ from pydantic import ValidationError
 from sqlalchemy import select, func, text
 from ..config import settings
 from ..db import Database
-from ..models import Product, Order, Payment, Hosting, Ticket, Audit, Premium, Level, Giveaway, Review, Heartbeat, WebSession, now
+from ..models import Product, Order, Payment, Ticket, Audit, Review, Heartbeat, WebSession, now
 from ..schemas import ProductInput, GuildConfig
 from ..security import DomainError, RateLimiter
 from ..services.core import Core
@@ -35,7 +35,7 @@ def create_app(cfg=None, database=None):
         if database is None:
             db.engine.dispose()
 
-    app = FastAPI(title='NEX CODEX', version='1.1.0', lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title='NEX CODEX', version='1.2.0', lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.config, app.state.db = cfg, db
     app.state.core, app.state.market, app.state.community = Core(db), Marketplace(db, cfg.product_root), Community(db)
     app.state.limiter = RateLimiter()
@@ -54,7 +54,7 @@ def create_app(cfg=None, database=None):
 
     def render(request, template, **data):
         user = session_for(request)
-        return templates.TemplateResponse(request=request, name=template, context={'user': user, 'brand': 'NEX CODEX', 'public_url': cfg.public_url, 'guild_id': None, 'active': 'overview', **data})
+        return templates.TemplateResponse(request=request, name=template, context={'user': user, 'brand': 'NEX CODEX', 'public_url': cfg.public_url, 'guild_id': None, 'active': 'overview', 'is_owner': bool(user and user.user_id in cfg.owner_ids), **data})
 
     @app.exception_handler(DomainError)
     async def domain_error(request, exc):
@@ -75,7 +75,7 @@ def create_app(cfg=None, database=None):
             s.execute(text('SELECT 1'))
             bot = s.get(Heartbeat, 'bot')
             online = bool(bot and bot.updated_at > now()-timedelta(seconds=90))
-        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.1.0'}
+        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.2.0'}
 
     @app.get('/auth/login')
     async def login(request: Request):
@@ -146,7 +146,7 @@ def create_app(cfg=None, database=None):
 
     @app.get('/guild/{guild_id}/settings')
     async def get_settings(request: Request, guild_id: int):
-        (await guild_actor(request, guild_id)).require_admin()
+        (await guild_actor(request, guild_id)).require_owner()
         return render(request, 'settings.html', guild_id=guild_id, config=app.state.core.config(guild_id), active='settings', saved=request.query_params.get('saved'))
 
     @app.post('/guild/{guild_id}/settings')
@@ -155,7 +155,7 @@ def create_app(cfg=None, database=None):
         form = await request.form()
         csrf(request, form, user)
         a = await guild_actor(request, guild_id)
-        a.require_admin()
+        a.require_owner()
         try:
             changes = json.loads(str(form.get('configuration', '{}')))
         except ValueError:
@@ -168,13 +168,13 @@ def create_app(cfg=None, database=None):
     @app.get('/guild/{guild_id}/products')
     async def manage_products(request: Request, guild_id: int, page: int = Query(1, ge=1, le=10000)):
         a = await guild_actor(request, guild_id)
-        a.require(app.state.core.config(guild_id))
+        a.require_owner()
         return render(request, 'manage_products.html', guild_id=guild_id, products=app.state.market.browse(guild_id= guild_id, page=page, staff=True), active='products', page=max(1,page))
 
     @app.get('/guild/{guild_id}/products/edit')
     async def edit_product(request: Request, guild_id: int, product_id: str = ''):
         a = await guild_actor(request, guild_id)
-        a.require(app.state.core.config(guild_id))
+        a.require_owner()
         p = None
         if product_id:
             with db.sessions() as s:
@@ -235,31 +235,6 @@ def create_app(cfg=None, database=None):
         app.state.market.review_payment(a, order_id, approve, str(form.get('reason', '')))
         return RedirectResponse(f'/guild/{guild_id}/payments', status_code=303)
 
-    @app.get('/guild/{guild_id}/premium')
-    async def premium(request: Request, guild_id: int):
-        a = await guild_actor(request, guild_id)
-        a.require(app.state.core.config(guild_id))
-        with db.sessions() as s:
-            rows = list(s.scalars(select(Premium).where(Premium.guild_id == guild_id).limit(100)))
-        return render(request, 'premium.html', guild_id=guild_id, rows=rows, active='premium')
-
-    @app.post('/guild/{guild_id}/premium')
-    async def save_premium(request: Request, guild_id: int):
-        form = await request.form()
-        csrf(request, form, require_session(request))
-        a = await guild_actor(request, guild_id)
-        try:
-            user_id, days = int(form['user_id']), int(form['days'])
-        except (ValueError, KeyError):
-            raise DomainError('Use numeric user ID and duration.')
-        if user_id <= 0 or days < 0:
-            raise DomainError('Use a positive user ID and a non-negative duration.')
-        action = form.get('action')
-        if action not in ('grant', 'extend', 'revoke'):
-            raise DomainError('Choose grant, extend or revoke.')
-        app.state.core.premium(a, user_id, str(form.get('plan','')), days or None, revoke=action == 'revoke', extend=action == 'extend')
-        return RedirectResponse(f'/guild/{guild_id}/premium', status_code=303)
-
     @app.get('/api/products')
     def public_products(category: str = '', q: str = '', page: int = Query(1, ge=1, le=10000)):
         products = app.state.market.browse(category=category or None, query=q, page=page)
@@ -274,7 +249,7 @@ def create_app(cfg=None, database=None):
 
     @app.get('/api/guild/{guild_id}/settings')
     async def api_settings(request: Request, guild_id: int):
-        (await guild_actor(request, guild_id)).require_admin()
+        (await guild_actor(request, guild_id)).require_owner()
         return app.state.core.config(guild_id)
 
     return app

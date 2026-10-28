@@ -17,8 +17,8 @@ def db(tmp_path):
 
 
 @pytest.fixture
-def admin():
-    return Actor(100, 1000, administrator=True)
+def owner():
+    return Actor(100, 1000, administrator=True, owner=True)
 
 
 @pytest.fixture
@@ -27,9 +27,9 @@ def buyer():
 
 
 @pytest.fixture
-def core(db, admin):
+def core(db, owner):
     service = Core(db)
-    service.configure(admin, {'staff_roles': [20], 'payment_roles': [30], 'upi_id': 'synthetic@example', 'qr_url': 'https://example.com/test-qr.png', 'payee': 'Synthetic test payee', 'free_claim_cooldown': 0})
+    service.configure(owner, {'staff_roles': [20], 'payment_roles': [30], 'upi_id': 'synthetic@example', 'qr_url': 'https://example.com/test-qr.png', 'payee': 'Synthetic test payee', 'free_claim_cooldown': 0})
     return service
 
 
@@ -39,10 +39,10 @@ def market(db, core, tmp_path):
 
 
 @pytest.fixture
-def paid(market, admin):
-    return market.save_product(admin, {'name': 'Test source', 'category': 'source', 'price': 49900, 'published': True, 'delivery_kind': 'instructions', 'delivery_value': 'Synthetic delivery instructions'})
+def paid(market, owner):
+    return market.save_product(owner, {'name': 'Test source', 'category': 'source', 'price': 49900, 'published': True, 'delivery_kind': 'instructions', 'delivery_value': 'Synthetic delivery instructions'})
 
 
 @pytest.fixture
-def free(market, admin):
-    return market.save_product(admin, {'name': 'Test template', 'category': 'template', 'price': 0, 'published': True, 'delivery_kind': 'instructions', 'delivery_value': 'Synthetic template instructions', 'cooldown_seconds': 0})
+def free(market, owner):
+    return market.save_product(owner, {'name': 'Test template', 'category': 'template', 'price': 0, 'published': True, 'delivery_kind': 'instructions', 'delivery_value': 'Synthetic template instructions', 'cooldown_seconds': 0})

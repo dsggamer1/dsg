@@ -4,10 +4,11 @@ import discord
 from ..models import Product
 from ..security import Actor, DomainError
 from .discord import embed
+from .theme import themed_embed, emoji_for
 
 
-def product_embed(product):
-    item = embed(product.name, product.description or 'A new addition to the NEX CODEX collection.')
+def product_embed(product, config=None):
+    item = themed_embed('product', product.name, product.description or 'A new addition to the NEX CODEX collection.', config=config)
     item.add_field(name='Price', value=f'{product.currency} {product.price/100:,.2f}' if product.price else 'Free claim')
     item.add_field(name='Collection', value='Server template' if product.category == 'template' else 'Bot source code')
     item.add_field(name='Terms', value=product.terms[:1024] or 'No additional terms.', inline=False)
@@ -41,8 +42,9 @@ class PersonalView(discord.ui.View):
 
 
 class CheckoutView(PersonalView):
-    def __init__(self, user_id, product):
+    def __init__(self, user_id, product, config=None):
         super().__init__(user_id)
+        self.confirm_order.emoji = emoji_for('shop', config)
         self.product_id = product.id
         self.expected_terms = (product.price, product.currency, product.terms, product.name)
         self.confirm_order.label = 'Confirm purchase' if product.price else 'Claim free product'
@@ -75,13 +77,17 @@ class ProductSelect(discord.ui.Select):
             product = s.get(Product, self.values[0])
             if not product or product.guild_id != interaction.guild_id or not product.published or product.archived or product.category not in ('template', 'source'):
                 raise DomainError('This product is no longer available.')
-        await interaction.response.send_message(embed=product_embed(product), view=CheckoutView(interaction.user.id, product), ephemeral=True)
+        cfg = bot.core.config(interaction.guild_id)
+        await interaction.response.send_message(embed=product_embed(product, cfg), view=CheckoutView(interaction.user.id, product, cfg), ephemeral=True)
 
 
 class ShopView(PersonalView):
     def __init__(self, user_id, bot, guild_id, category='', search='', page=1):
         super().__init__(user_id)
         self.bot, self.guild_id, self.category, self.search, self.page = bot, guild_id, category, search, max(1, page)
+        self.config = bot.core.config(guild_id)
+        self.previous.emoji = emoji_for('previous', self.config)
+        self.next_page.emoji = emoji_for('next', self.config)
         self.products = bot.market.browse(guild_id, category or None, search, self.page)
         if self.products:
             self.add_item(ProductSelect(self.products))
@@ -89,12 +95,12 @@ class ShopView(PersonalView):
         self.next_page.disabled = not bot.market.browse(guild_id, category or None, search, self.page+1)
 
     def card(self):
-        item = embed('NEX CODEX • The collection', 'Server templates and bot source code, ready for your next idea.\nChoose a product below to view its terms and confirm an order.')
+        item = themed_embed('shop', self.config['shop_title'], self.config['shop_description'], config=self.config)
         for p in self.products:
             price = f'{p.currency} {p.price/100:,.2f}' if p.price else 'Free'
             item.add_field(name=f'{p.name} · {price}', value=f'{p.description[:160] or "Explore this product."}\n`{p.id}`', inline=False)
         if not self.products:
-            item.description = 'No published products match this view. Staff can add a product with /productadd and publish it with /productpublish.'
+            item.description = 'No published products match this view. The bot owner can add a product with /addproduct and publish it with /productpublish.'
         item.set_footer(text=f'NEX CODEX • Page {self.page} • Payments checked by people')
         return item
 
@@ -109,3 +115,24 @@ class ShopView(PersonalView):
     @discord.ui.button(label='Next', style=discord.ButtonStyle.secondary, emoji='▶️', row=1)
     async def next_page(self, interaction, button):
         await self.turn(interaction, 1)
+
+
+class ShopPanel(discord.ui.View):
+    """A public durable entry point; each customer gets a fresh personal storefront."""
+    def __init__(self, config=None):
+        super().__init__(timeout=None)
+        self.browse.emoji = emoji_for('shop', config)
+
+    @discord.ui.button(label='Browse the shop', style=discord.ButtonStyle.primary, custom_id='nex:shop:browse')
+    async def browse(self, interaction, button):
+        if not interaction.guild_id:
+            await interaction.response.send_message('Use the shop in a server.', ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        try:
+            bot = interaction.client
+            bot.limiter.check(('shop_panel', interaction.guild_id, interaction.user.id), 5, 60)
+            view = ShopView(interaction.user.id, bot, interaction.guild_id)
+            await interaction.followup.send(embed=view.card(), view=view, ephemeral=True)
+        except DomainError as exc:
+            await interaction.followup.send(str(exc), ephemeral=True)

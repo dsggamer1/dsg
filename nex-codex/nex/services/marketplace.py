@@ -11,9 +11,10 @@ class Marketplace:
         self.db, self.product_root = db, product_root
 
     def save_product(self, actor, data, product_id=None):
+        actor.require_owner()
         data = ProductInput.model_validate(data).model_dump()
         with self.db.transaction() as s:
-            actor.require(config(s, actor.guild_id))
+            actor.require_owner()
             product = s.get(Product, product_id) if product_id else Product(guild_id=actor.guild_id)
             if product is None or product.guild_id != actor.guild_id:
                 raise DomainError('Product not found.')

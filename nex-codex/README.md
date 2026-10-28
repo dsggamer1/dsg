@@ -1,241 +1,182 @@
 # NEX CODEX
 
-**Your community. Connected.** A modular Discord bot and companion FastAPI dashboard, with server management and a marketplace for server templates and bot source code. Hosting products are not offered in this release.
+A focused Discord community and digital-product bot with a matching FastAPI dashboard. Current command families: **welcome, leave, tickets, giveaways, say, broadcast, products, shop and help**. Sell Discord server templates and bot source code using **manual QR/UPI payments**. Hosting is not offered.
 
-This is a runnable v1.1 foundation with implemented end-to-end services, not a hosted service. See [PROJECT_STATE.md](PROJECT_STATE.md) for the precise coverage, verified results, and remaining work. The existing portfolio website in the parent repository is preserved.
+## Install and run
 
-## Quick start
-
-Requires Python **3.11+** (verified with 3.11.18 and 3.14.4). Run all commands from this directory.
+Use Python **3.11+**. Run from the directory containing `main.py`, `.env`, `requirements.txt` and `nex/`.
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-cp -n .env.example .env  # Keep an existing .env; create one if absent
-python -c "import secrets; print(secrets.token_urlsafe(48))"
+python main.py
 ```
 
-A starter `.env` with empty credentials is included. Put that generated value in `SESSION_SECRET` and fill in your Discord credentials locally. Never commit a populated `.env`; Git tracks the supplied starter file, so review changes before every commit. `requirements.lock` records the exact versions tested on Linux/Python 3.14; use `pip install -r requirements.lock` to reproduce that environment. On other Python versions/platforms install `requirements.txt` and run the tests before deployment.
+The ZIP contains a blank starter **`.env`** (one leading dot). Set these locally before starting:
+
+```dotenv
+DISCORD_TOKEN=YOUR_BOT_TOKEN
+OWNER_IDS=[123456789012345678]
+SYNC_COMMANDS=true
+COMMAND_GUILD_IDS=[123456789012345678]
+```
+
+Replace the example owner ID with **your Discord user ID** and the command guild ID with **your server ID**. These are different IDs. Both lists use valid JSON, without quotes around numbers. `COMMAND_GUILD_IDS=[]` uses global registration only; direct guild registration is useful for immediate visibility. Do not post your populated environment file or token. Keep your existing `.env` when updating the project. The tracked starter has empty secrets; never commit a populated copy.
+
+`main.py` initializes the database and starts the bot. The database and `private/products/` need persistent storage. The tested Python 3.14 dependency snapshot is in `requirements.lock`; use `requirements.txt` on Python 3.11.
+
+### Wispbyte / Python panels
+
+Upload the **contents of `NEX_CODEX/`** together. Select Python 3.11 or newer, install `requirements.txt`, and set the startup file to `main.py` or command to `python main.py`. Enable hidden-file display to find `.env`. Wispbyte itself has not been accessed or tested. The dashboard is optional and needs a separate web process/port supported by your plan.
+
+### Discord Developer Portal
+
+1. Create an application and bot at <https://discord.com/developers/applications>.
+2. Copy its current bot token into `DISCORD_TOKEN`. Enable **Server Members Intent** and **Message Content Intent** under Bot. Members supports welcome/leave; message content supports prefix commands and transcripts.
+3. Invite with **bot** and **applications.commands** scopes. Grant View Channels, Send Messages, Embed Links, Attach Files, Read Message History and Manage Channels for private tickets. Manage Roles is needed only if using the optional welcome auto-role; place the bot above that nonprivileged role. Administrator is not required.
+4. Set your own user ID in `OWNER_IDS`. Only those IDs can configure NEX CODEX or manage products/shop panels. Guild owners, administrators and staff do **not** gain those rights automatically.
+5. Start/restart the bot. Slash commands synchronize automatically. Use `/help`; the bot owner can use `/setup` and `/diagnostics`. Prefix defaults to `!`, or `DEFAULT_PREFIX` until a guild override is saved.
+
+If old commands remain visible, keep the same `COMMAND_GUILD_IDS` used previously and restart so that guild's registration is replaced. Global changes can take time to propagate. Owner-only `!sync` retries registration. If prefix commands do not respond, check Message Content Intent, the prefix and channel permissions. Clear startup messages explain absent/rejected tokens or disabled privileged intents. Actual live Discord setup still needs verification with your credentials.
+
+## Command and permission map
+
+Slash commands and equivalent prefix commands are registered. `/help` lists the current registry, with owner setup commands hidden from nonowners. Runtime checks enforce permissions even when a command is visible in Discord's menu.
+
+| Access | Commands |
+|---|---|
+| Members | `/help`, `/shop`, `/product`, `/buy`, `/orders`, `/deliver`, `/ticket`, `/payment` |
+| Staff or administrator | `/say`, `/broadcast`, `/giveaway`, `/reroll`, `/ticketmanage`, `/transcript`, `/orderstate` |
+| Payment reviewers or administrator | `/paymentreview` — self-review is always prohibited |
+| **Bot owners in OWNER_IDS only** | `/welcome`, `/leave`, `/addproduct`, `/productedit`, `/productpublish`, `/createshop`, `/configure`, `/prefix`, `/setup`, `/diagnostics`, `!sync` |
+
+Configured bot owners can also perform staff/reviewer operations, subject to the self-payment prohibition. `staff_roles` grant staff access; `payment_roles` grant payment review only. Configuration/product ownership checks also run in services and the dashboard. The old text spelling `!productadd` is an alias for `!addproduct`; the slash command is `/addproduct`.
+
+Moderation, generic utility/fun, XP, role selection, premium, referrals and AI commands are **not registered** in this focused release. Their historical models/services remain for data compatibility. Automated moderation/security/XP message processors are inactive. Existing saved reminders still finish through the recovery worker; no new reminder command is exposed. Hosting remains excluded.
+
+## Owner setup
+
+Start with `/setup`. `/configure key value` accepts validated JSON. With slash commands, enter a string value as `"text"`, role IDs as `[123456789012345678]`, and a channel ID as a number. Examples:
+
+```text
+/configure key:staff_roles value:[123456789012345678]
+/configure key:payment_roles value:[234567890123456789]
+/configure key:ticket_category value:345678901234567890
+/configure key:log_channel value:456789012345678901
+```
+
+Use actual existing server IDs. Do not use @everyone as staff. Automatic/self-service roles cannot grant configured staff or reviewer roles.
+
+### Welcome and leave
+
+```text
+/welcome channel:#welcome message:Welcome {user} to {server}!
+/leave channel:#goodbye message:{name} left {server}.
+/welcome
+/leave
+/welcome enabled:false
+```
+
+A call without a channel shows a preview. A channel/message saves the configuration; `enabled:false` disables that message. Templates support `{user}`, `{name}` and `{server}`. Join/leave messages are branded embeds with optional membership audit logging. An optional safe `auto_role` can be configured; missing Discord permissions are handled. Departures never cause automatic bans or claim restrictions.
+
+### Say and broadcast
+
+`/say message:... channel:#announcements` posts plain text. `/broadcast title:... message:... channel:#announcements` posts a branded embed. The channel defaults to the current one. These require staff/admin access; nonowner staff must also be able to view/send in the destination. Everyone/role/user mention notifications are suppressed. Sends are rate-limited and audited; failed sends are not reported as success.
+
+### Emoji styling
+
+Owners can customize the `emojis` JSON configuration. Accepted slots:
+
+`welcome`, `leave`, `ticket`, `giveaway`, `say`, `broadcast`, `product`, `shop`, `help`, `settings`, `success`, `error`, `previous`, `next`.
+
+```text
+/configure key:emojis value:{"welcome":"👋","giveaway":"🎉","shop":"🛍️"}
+```
+
+Unicode emojis and Discord custom codes (`<:name:ID>` or `<a:name:ID>`) are validated. Custom emojis must exist and be available to the bot in Discord; inaccessible custom emojis cannot be verified offline. Defaults remain until replacements are supplied. Repost shop panels/giveaways to change their existing button appearance; new embeds and views use the current configuration. No specific user-supplied emoji list was received for this revision.
+
+## Products and persistent shop
+
+1. Owner uses `/addproduct` with category **template** or **source**, name, description, private delivery instructions or HTTPS URL, and a price such as `499.00`. New products are drafts.
+2. Use `/productedit` to set terms, thumbnail, availability, delivery type/value or archive status. Except price, values accept JSON or plain text. `/productpublish` publishes/unpublishes a reviewed product.
+3. Configure `shop_title`, `shop_description` and optional public HTTPS `shop_image` with `/configure`.
+4. Owner runs `/createshop channel:#shop`. This posts a persistent browse button. Each click opens a fresh private storefront bound to that customer. The handler is restored after restart; products are fetched from the database each time.
+5. `/shop` also supports category, search and page arguments. Dropdown product cards display price/terms and confirmation checkout buttons.
+
+**Prices:** Discord `/addproduct` and `/productedit price` use currency units, e.g. `499.00`. Dashboard forms use integer minor units, e.g. `49900`. Database prices are integers, and orders snapshot their amount, currency, name, terms and delivery content.
+
+Free claims immediately receive an entitlement. Duplicate ownership, pending orders, configurable lifetime total free-claim caps and cooldowns are enforced. Existing claims/orders remain accessible after restart. Entitlement records do not identify alternate accounts.
+
+### Private delivery
+
+Place product files under `PRODUCT_ROOT`, default `private/products/`. Configure `delivery_kind=file` and a relative `delivery_value`, such as `community-template.zip`. Supported extensions: `.zip`, `.json`, `.txt`, `.pdf`, `.tar`, `.gz`. Publishing and downloads recheck existence, traversal/symlink containment and entitlement. Private files are never web static assets or included in release ZIPs.
+
+Other kinds: `link` (public HTTPS URL disclosed only after authorization) or `instructions` (private text). Recipients can copy disclosed links; use protected files for per-request access checks. `/deliver` sends privately by DM and records delivery only after successful send; authenticated dashboard downloads also check entitlement. Re-downloads are allowed. A crash between sending and database commit can lead to a duplicate send on retry.
+
+## Private tickets and manual QR/UPI payments
+
+**No payment gateway, automatic bank/screenshot verification, payment webhook or automatic refund.**
+
+Owner configures `upi_id`, `qr_url` (public HTTPS image), `payee`, `currency`, `payment_instructions`, `staff_roles` and `payment_roles`. No real payment information ships with the project. Currency must match the product.
+
+1. Customer confirms a paid product. A UUID order records the exact price and `pending_payment` status.
+2. A private purchase ticket includes the customer, bot, staff and reviewer roles; @everyone is denied. Discord administrators retain platform-level access.
+3. The ticket displays exact amount, order ID, QR, UPI ID, payee and instructions. Customer pays independently.
+4. Customer uses `/payment` **inside their open purchase ticket** with a PNG/JPEG/WebP attachment up to 8 MB and optional reference. Discord attachment URLs may expire; reviewers should check promptly.
+5. An authorized reviewer independently checks the receiving account, amount and reference, then explicitly approves/rejects with `/paymentreview` or the dashboard. A screenshot alone never marks paid. Rejection requires a reason. Nobody can review their own order.
+6. Approval atomically records the reviewer, time, decision, paid state and one entitlement. Duplicate/concurrent approvals are prevented. `/deliver` or My orders provides authorized access.
+
+`/ticket` opens support/appeal tickets or resumes a purchase by order ID. One active ticket per customer/category; reservations/channel topics help recover interrupted creation. Existing private overwrites are restored before reuse. `/ticketmanage` claims/unclaims/closes/reopens. Closed tickets are visible but read-only to customers. `/transcript` sends staff the latest 500 messages by DM.
+
+If ticket creation fails after saving an order, resume that order with `/ticket order_id:...`; do not pay a replacement order. Missing/deleted channels need staff repair. `/orderstate` records cancellation of an unpaid order or a manual refund completed outside the bot. It never transfers money; recorded refunds revoke future delivery access.
+
+## Giveaways
+
+Staff create `/giveaway prize:... minutes:... winners:...`. Persistent entry buttons, unique entries, random outcomes, reroll history and overdue draws survive restarts. `/reroll` operates on ended giveaways. Notification retries are at least once; an abrupt crash can duplicate an announcement. One bot instance is required for this worker model.
+
+## Dashboard and OAuth
+
+Generate a random secret, then edit `.env`:
 
 ```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 python -m nex.db
 uvicorn nex.dashboard.app:create_app --factory --host 127.0.0.1 --port 8000 --no-access-log
 ```
 
-Open **http://localhost:8000**. The homepage, catalogue, setup guide and `/health` work without Discord credentials. The catalogue starts empty. Authentication and guild management require the configuration below. The health response honestly reports the bot offline until its heartbeat is current.
+Set `SESSION_SECRET` to the generated value, plus `DISCORD_CLIENT_ID`, `DISCORD_CLIENT_SECRET`, `PUBLIC_URL` and `DISCORD_REDIRECT_URI`. Register the exact redirect URI in Developer Portal → OAuth2, initially `http://localhost:8000/auth/callback`. Production HTTPS requires `COOKIE_SECURE=true` and matching public HTTPS URLs.
 
-In a second terminal, activate the same virtual environment, then:
+Public pages/catalogue and `/health` work without Discord credentials. Sign-in requests identify/guilds. OAuth state is expiring, cookie-bound and single-use. Sessions are opaque HttpOnly cookies backed by expiring database records. Sensitive forms require CSRF. Each protected guild request verifies live membership/roles/ownership with Discord and fails closed if verification fails. OAuth access tokens are not retained.
 
-```bash
-python -m nex.bot
-```
+Product/settings pages and settings API require the configured **bot owner**, not administrator status. Staff can access the overview and authorized reviewer queue. Customers see their own orders/downloads. Premium/hosting management pages are removed. Advanced settings use a validated JSON editor; historical fields remain for compatibility and are not advertised as active features.
 
-The bot exits with a clear message if `DISCORD_TOKEN` is missing. Ctrl+C gracefully closes the Discord client. Run **one bot process** and **one dashboard worker** for v1. Both use the same database and private product directory.
+Read APIs: `/health`, `/api/products`, `/api/guild/{guild_id}/orders` (own orders), `/api/guild/{guild_id}/settings` (owner only). Public products omit private delivery content. POST form endpoints are authenticated/CSRF-protected, not public integration APIs. Requests are limited to 64 KiB; there is no web upload endpoint. Pagination and sensitive actions are bounded/rate-limited.
 
-## Hosting-panel upload (including Wispbyte)
+## Database and deployment
 
-The project includes `.env` and a `main.py` entry point for Python hosting panels. These instructions describe the project requirements; the Wispbyte panel itself has not been verified.
+SQLite is the default, with WAL, foreign keys and busy timeout. PostgreSQL uses `DATABASE_URL=postgresql+psycopg://...`. `python -m nex.db` initializes schema v1 idempotently; it does **not** migrate changed schemas. This revision adds configuration JSON defaults without deleting historical data or changing table schemas.
 
-1. Extract the ZIP and upload the **contents of `NEX_CODEX/`** into your server's working directory. `main.py`, `.env`, `requirements.txt`, and the `nex/` folder must be together. Enable hidden-file display if `.env` is not visible.
-2. Use Python 3.11 or newer and install dependencies with `python -m pip install -r requirements.txt`.
-3. Open **`.env`** (one leading dot, not `..env`). Set `DISCORD_TOKEN` to your actual bot token, set `OWNER_IDS` to your numeric user ID in JSON array form, and configure the intents in the Discord Developer Portal as described below. The supplied credential fields are deliberately empty.
-4. If the panel asks for a startup file, use **`main.py`**. If it asks for a command, use **`python main.py`**. The bot initializes its database automatically.
-5. Keep `nex.db` and `private/products/` on persistent storage. Keep your populated `.env` private and do not push it to GitHub. Restart the bot after editing environment values.
+Use **one bot process and one web worker**, shared database and private product directory. Sensitive writes serialize through SQLite BEGIN IMMEDIATE or PostgreSQL transaction advisory locking. Process-local rate limits and non-atomic Discord/database sends are documented limits. Back up database/private files together using SQLite backup API or stopped services, or PostgreSQL pg_dump. Keep backups and secrets out of public assets.
 
-The Discord bot can run without the dashboard. For the dashboard, configure `SESSION_SECRET` and Discord OAuth credentials and run the documented Uvicorn command as a separate process/service with a reachable web port and public URL. Whether your hosting plan supports that second service must be checked in its panel.
+Deployment examples are in `deploy/`; replace their paths/user, use persistent storage, private environment files, TLS reverse proxy, disabled OAuth query logging and a 64 KiB body limit. Hosted TLS/DNS/systemd/panel configuration needs operator verification.
 
-## Discord Developer Portal setup
+Stored records include Discord IDs, settings, membership events, orders, receipt URLs/references, entitlements, tickets, audit logs and giveaways. Legacy feature/history tables are retained. Expired sessions/states are purged by the bot worker. Automated retention/export/deletion and durable outbound queues are unfinished; operators need their own retention/backup process. Staff should keep ticket transcripts and log channels private.
 
-1. Create an application at <https://discord.com/developers/applications> and add its bot.
-2. Copy the bot token into `DISCORD_TOKEN`. Set `DISCORD_CLIENT_ID` and `DISCORD_CLIENT_SECRET` from the application/OAuth settings.
-3. Enable **Server Members Intent** and **Message Content Intent**. Message content powers prefix commands and automod; member intent powers join/leave, role and membership features. Discord may require approval for privileged intents at scale.
-4. Configure an OAuth redirect URI that exactly matches `DISCORD_REDIRECT_URI`, initially `http://localhost:8000/auth/callback`. Set `PUBLIC_URL=http://localhost:8000` locally. The web authorization flow requests **identify** and **guilds**; it does not store OAuth access tokens after sign-in.
-5. Invite the bot with **bot** and **applications.commands** scopes. Grant only the permissions needed for enabled features: View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Channels (tickets), Manage Roles (safe role tools), Manage Messages (purge/automod), Kick Members, Ban Members, Moderate Members, View Audit Log (security alerts), and Send Polls. You need not grant Administrator.
-6. Place the bot role above roles and members it must manage. Discord administrators and guild owners retain their platform-level access to ticket channels.
-7. Put your own Discord user ID in `OWNER_IDS`, JSON syntax: `[123456789012345678]`. Slash commands publish automatically at startup (`SYNC_COMMANDS=true`). For immediate server-specific registration, put your server ID in `COMMAND_GUILD_IDS`, for example `[123456789012345678]`, then restart. Global propagation can take time. Owner-only `!sync` is available to retry; `SYNC_COMMANDS=false` disables automatic publication.
-8. Use `/help` to browse the **actual registered commands**. Text commands use `DEFAULT_PREFIX` (`!` initially); `/prefix` changes it per guild. Complex argument workflows are easiest through slash commands.
-
-The sign-in session is an opaque random HttpOnly cookie backed by an expiring server-side record. OAuth state is bound to a cookie, expires in ten minutes and is single-use. Sensitive forms require CSRF tokens. Protected guild requests fetch current membership, roles and ownership from Discord and fail closed if verification fails.
-
-## Commands not responding?
-
-1. Start with `python main.py` from the directory containing `.env`, `requirements.txt` and `nex/`. Read the panel console: missing token, rejected token and disabled privileged intents have explicit startup messages.
-2. Enable **Message Content Intent** and **Server Members Intent** under Developer Portal → Bot, then restart. Prefix commands require message content. Verify the bot is online and can read/send/embed in your channel.
-3. Invite the correct application with **bot** and **applications.commands** scopes. Keep `SYNC_COMMANDS=true`. Set `COMMAND_GUILD_IDS=[your_numeric_server_id]` (replace with the real number; valid JSON) to sync directly to your server on restart.
-4. Try `/ping`, `/help`, `/diagnostics`. Try `!ping` or your configured prefix for text commands. Discord server integration/channel command restrictions can also hide slash commands.
-5. Keep the bot's role above roles/members it manages; grant feature-specific permissions from the list above. `/diagnostics` checks the current channel's core permissions, not all API actions.
-6. Slash commands now acknowledge before slower ticket/file/provider operations to avoid the initial three-second interaction timeout. If an operation fails after creating an order, use `/orders` and resume that existing order.
-
-No real bot token was supplied during this audit. Local command loading, payload serialization, prefix invocation and interaction handling were tested with mocks; actual Discord and Wispbyte behavior still needs a live staging check.
-
-## Server setup
-
-Start with `/setup` for the guided command checklist and `/diagnostics` for command/prefix/channel permission checks. Open **My servers → Manage → Server settings**, or use `/configure key value`. Values in `/configure` must be JSON (quote strings; IDs are numbers; roles are arrays).
-
-Suggested order:
-
-1. `staff_roles`, `payment_roles`, `ticket_category`, `log_channel`.
-2. `welcome_channel`, `leave_channel`, `welcome_message`, `leave_message`, optional `auto_role`. Templates support `{user}`, `{name}`, `{server}`; arbitrary formatting is not executed.
-3. `self_roles` for `/roles`, and optional `leveling_enabled`, `xp_cooldown`, `level_channel`, `level_rewards` (for example `{"5": 123456789012345678}`). Only nonprivileged, unmanaged roles below the bot can be assigned. NEX CODEX staff/payment-review roles cannot be self-assigned, used for auto-role, or given as XP rewards.
-4. Enable `automod_enabled` after reviewing thresholds/exemptions. Default action is **log**. Optional **delete** never automatically bans or times out. Rules cover bursts, repeated text, mention spam, invites, capitals, and explicitly configured blocked domains. Caps and spam signals are not proof of malicious intent.
-5. Enable `security_enabled` and configure `security_threshold`, `security_window`, `security_exempt_users`. Supported audit actions: channel/role deletion, bans, kicks and webhook creation. Detection requires the necessary Discord events and View Audit Log permission. Responses currently persist incidents and alert staff. No automatic restoration, quarantine or permission stripping is implemented.
-
-The dashboard JSON configuration editor exposes all fields with server-side validation. Full field defaults and bounds are in `nex/schemas.py`. Advanced settings do not have individual visual toggle pages yet.
-
-## Marketplace and manual QR/UPI payments
-
-**No payment gateway, payment webhook, automatic bank verification, or automatic refund is implemented.**
-
-### Staff configuration
-
-Set actual values for `upi_id`, `qr_url` (public HTTPS image URL), `payee`, `payment_instructions`, `currency` and `payment_roles`. No real payment details ship with this project. The payment currency must match the product currency. UPI is ordinarily used with INR; configure currency consistently with what your receiving account actually supports.
-
-Staff create/edit/publish/unpublish/archive products in dashboard **Products**, or directly in Discord:
-
-- `/productadd`: choose `template` or `source`, a name, price, delivery instructions or HTTPS download link, and description. It creates a draft.
-- `/productedit`: change terms, thumbnail, availability, delivery content and other validated fields. Use `delivery_kind=file` plus a relative `delivery_value` for private files. Set `archived=true` to archive.
-- `/productpublish`: publish or unpublish the reviewed draft.
-
-**Price input:** Discord `/productadd` and `/productedit price` use currency units (`499.00`). Dashboard forms use integer minor units (`49900` means `499.00`). Stored prices are always integer minor units. Other `/productedit` values accept JSON (`true`, `false`, arrays, quoted strings) or plain text. Set product terms before opening sales.
-
-### Purchase flow
-
-1. Customer opens `/shop`, selects a product, reviews the branded product card and presses **Confirm purchase**. The storefront has page buttons, search/category arguments and controls bound to the initiating customer. `/product` and `/buy` remain available.
-2. `/buy` asks for confirmation of product, amount and terms. The service checks those terms again inside the order transaction. The order gets a UUID, immutable price/currency/delivery snapshots and `pending_payment` status.
-3. A private purchase channel is created for the customer, bot, staff roles and reviewer roles. The channel displays order ID, exact amount, QR and UPI instructions.
-4. Customer pays independently, then uses `/payment` **inside that open ticket**, attaching a PNG/JPEG/WebP screenshot up to 8 MB and optional reference. The bot stores the Discord attachment URL; it does not OCR or automatically trust it. Attachment URLs can expire; staff should review promptly and consult the original ticket if needed.
-5. Reviewers independently verify the receiving account, amount and reference. `/paymentreview` or the dashboard payment queue records an explicit decision, reviewer, timestamp and reason. Rejection requires a reason and allows resubmission. **Reviewers cannot approve/reject their own order**, including administrators and owners. Configured ordinary staff roles do not implicitly grant payment-review access.
-6. Approval atomically records `paid` and an entitlement. Concurrent/duplicate approvals produce one entitlement.
-7. Customer uses `/deliver` (private DM) or **My orders → Access product**. A failed Discord send does not mark delivery successful.
-
-Order states implemented: `pending_payment`, `payment_submitted`, `paid`, `rejected`, `delivered`, `cancelled`, `manually_refunded`. The service also accepts `verification_required` for review compatibility, but there is no command that places an order into that intermediate state. `/orderstate` records unpaid cancellation or an already-completed external manual refund. It never transfers money. Refund recording revokes download entitlement but cannot recall an already downloaded file.
-
-If a ticket fails after order creation, the order remains recorded. Retry with `/ticket order_id:<ID>`; do not pay a new order. Ticket reservations and channel topics allow recovery after a crash. If a channel was deleted or a ticket was closed, staff must resolve it. A customer may have one active ticket per category; close an earlier purchase ticket before opening a second one.
-
-### Free claims and reviews
-
-Free products use `/buy` too and immediately receive an entitlement. Duplicate ownership is blocked. Guild and product free-claim limits are **lifetime total free orders per user in that guild**, with the stricter configured cap/cooldown applied. They are not daily resetting quotas. Free claims, entitlement and delivery times persist. Staff may restrict/restore claims with `/freebierestrict`, inspect `/freebiehistory`, and review an `/ticket category:appeal` request. Membership departures are logged with entitlement counts; leaving alone triggers no restriction or ban. No alternate-account identification is claimed.
-
-`/review` requires an entitlement and supports a 1–5 rating and text. One review per customer/product. `reviews_allow_free` controls free-claim eligibility; `/reviewmoderate` hides/restores a review with an audit reason. Public product pages show visible ratings and reviews.
-
-### Private product files
-
-Place `.zip`, `.json`, `.txt`, `.pdf`, `.tar` or `.gz` files beneath `PRODUCT_ROOT` (default `private/products`). Use a **relative filename**, for example `community-template.zip`, in the product's delivery value. Publishing checks that the file exists and stays inside the root, including symlinks. Runtime downloads revalidate the path and entitlement. Private files are never mounted as web static files.
-
-- `file`: protected dashboard attachment or Discord DM. Keep file sizes within your guild/Discord upload limits; larger files can be downloaded through the dashboard.
-- `link`: HTTPS URL disclosed only after entitlement verification. This protects disclosure, not the remote file itself: recipients can copy the URL. Configure expiring provider links yourself or use private files when each download must be authorized.
-- `instructions`: private textual delivery instructions.
-
-A successful server response means the server transmitted the file or instructions; it cannot prove the recipient saved them. Re-downloads are intentionally allowed while entitlement is active. The initial delivery transition and timestamp are idempotent. The bot and database do not form a distributed transaction; a crash after sending but before committing can result in a retry sending the same product again.
-
-## Feature command map
-
-Run `/help` for the live list. Permission failures explain the action and do not expose internal exceptions.
-
-| Area | Commands / interface |
-|---|---|
-| Moderation | `/ban`, `/unban`, `/kick`, `/timeout`, `/untimeout`, `/warn`, `/history`, `/purge` |
-| Server tools | `/setup`, `/diagnostics`, `/ping`, `/about`, `/serverinfo`, `/userinfo`, `/avatar`, `/roleinfo`, `/channelinfo`, `/prefix`, `/configure` |
-| Roles & community | `/role`, `/roles`, `/poll`, `/leaderboard`, `/roll`, `/remind` |
-| Marketplace | `/shop`, `/product`, `/buy`, `/orders`, `/deliver`, `/productadd`, `/productedit`, `/productpublish`; dashboard product CRUD |
-| Tickets | `/ticket`, `/ticketmanage` (claim/unclaim/close/reopen), `/transcript` (last 500 messages to staff DM) |
-| Payments | `/payment`, `/paymentreview`, `/orderstate`; dashboard review queue |
-| Premium | `/premium` grant/revoke/extend/inspect; dashboard entitlement management |
-| Reviews & referrals | `/review`, `/reviewmoderate`, `/referral`, `/rewards` |
-| Giveaways | `/giveaway`, persistent entry button, `/reroll` |
-| Freebie review | `/freebierestrict`, `/freebiehistory`, appeal tickets |
-| Optional AI | `/ask`; owner config and guild opt-in required |
-| Owner | `!sync` |
-
-Ban, kick, purge, purchases and paid approvals require confirmation. Moderation enforces bot and moderator permissions plus role hierarchy. Warnings/history persist with actor, time and reason. Message edit/delete logging is limited to messages Discord delivers to the bot/cache; it cannot recover unavailable historical message content.
-
-Giveaway entries and random results persist; the worker draws overdue giveaways after restart. It retries unannounced results. Reminders also recover after restart. Delivery/announcement retries are at least once; an abrupt crash between Discord success and database commit may duplicate a notification. Reminders with closed DMs stay pending and retry; users should allow DMs. One bot instance avoids competing workers.
-
-## Premium and rewards
-
-Premium supports named grants, temporary/lifetime entitlement, extension, revocation and server-side `Core.has_premium`. No paid feature is advertised or gated in v1; a premium plan catalogue, pricing and additional premium-only features are unfinished. Grants are unique per guild/customer.
-
-Optional referral points are enabled with `rewards_enabled` and `referral_points`. A new customer must already own a product and select a current non-bot referrer with `/referral`. Self-referral and repeated redemption are blocked; rewards have unique ledger event keys. This does not prove an invitation happened or reliably detect alternate accounts. General earning rules, redemption and configurable referral-code issuance are not implemented.
-
-## Optional AI
-
-Set `AI_API_KEY`, `AI_MODEL`, and an HTTPS `AI_BASE_URL` for a provider implementing `/chat/completions`; enable `ai_enabled` per guild. `/ask` sends the supplied prompt to that provider, limits prompt/output length and applies per-user cooldowns. Provider errors and credentials are not returned to users. This adapter has not been verified against a live provider. No key or model is assumed to exist. Prompts should not contain private ticket contents or secrets.
-
-## API
-
-JSON endpoints:
-
-- `GET /health`: database connectivity and recent bot heartbeat; no secrets or user records.
-- `GET /api/products?category=template&q=...&page=1`: published product metadata, **without delivery secrets**.
-- `GET /api/guild/{guild_id}/orders?page=1`: authenticated customer's own orders.
-- `GET /api/guild/{guild_id}/settings`: authenticated administrator configuration.
-
-The dashboard's POST form endpoints use the same service layer and require session CSRF tokens; they are not unauthenticated integration APIs. API errors currently use the branded HTML error handler. CORS is not enabled. Request bodies are capped at 64 KiB; no web file uploads are accepted. Discord receipt attachment validation is separate.
-
-## Database, migrations and reliability
-
-SQLite is the local default; WAL, foreign keys and a busy timeout are enabled. PostgreSQL uses SQLAlchemy's psycopg driver:
-
-```dotenv
-DATABASE_URL=postgresql+psycopg://nex:YOUR_PASSWORD@127.0.0.1:5432/nex
-```
-
-Initialize with `python -m nex.db`. Schema version 1 is recorded. Initialization is idempotent but **does not migrate an existing changed schema**. Future schema changes require a versioned migration and backup; do not treat `create_all` as an upgrade engine. No migration from the unrelated portfolio site is needed.
-
-Sensitive mutations use a transaction, uniqueness constraints and serialized writes (SQLite `BEGIN IMMEDIATE`; PostgreSQL transaction-scoped advisory lock). This is deliberately conservative and suitable for a single bot/web deployment, not a high-throughput multi-instance platform. Database timestamps are naive UTC consistently; all IDs are Discord snowflakes or UUID strings; prices never use floating-point arithmetic.
-
-Back up the database and private product directory together. For SQLite, stop both processes or use SQLite's backup API instead of copying a live WAL database blindly. For PostgreSQL, use `pg_dump` with an appropriate private credentials file. Test restoration. Keep raw backup files outside the public/static directory.
-
-## Tests
+## Validation and project state
 
 ```bash
-pytest -q
-python -m compileall -q nex tests
+python -m pytest -q
+python -m compileall -q nex tests scripts main.py
 python -m pip check
 ```
 
-Tests use isolated SQLite databases and synthetic data. They verify database persistence, permissions and hierarchy, invalid products/URLs, order price snapshots, approval authorization, concurrent duplicate approval and free claims, payment rejection/resubmission, delivery access, refund revocation, ticket overwrites, premium expiration/lifetime, referrals/reward uniqueness, reviews, cooldowns, giveaway recovery, XP cooldowns, OAuth state/sessions/CSRF, dashboard access, API redaction and offline slash-command serialization.
+Tests use isolated SQLite databases, synthetic fixtures and Discord/OAuth mocks. They exercise owner-vs-admin/staff restrictions, actual command registry, command checks, welcome/leave rendering, announcements, persistent panels, emoji validation, payment/delivery integrity, tickets, dashboard authorization and packaging safety. Legacy model/service invariants remain covered without exposing their old commands.
 
-These tests **do not connect to live Discord**. Real OAuth consent, gateway intents, Discord moderation/tickets/file sends, and hosted AI provider behavior require separate staging verification with credentials and a test server. The available CodeRabbit Emulate v0.0.1 catalog was inspected; it does not include Discord or this AI adapter's chat-completions API.
-
-A disposable PostgreSQL 17 smoke was also executed locally for schema creation, configuration, paid order creation, four concurrent approvals (one success), entitlement and delivery. To repeat against your **dedicated test database named `nex_test`**:
+An optional PostgreSQL smoke creates synthetic records in a dedicated database named `nex_test`:
 
 ```bash
-export NEX_POSTGRES_TEST_URL='postgresql+psycopg://TEST_USER:TEST_PASSWORD@127.0.0.1:5432/nex_test'
-PYTHONPATH=. python scripts/smoke_postgres.py
+NEX_POSTGRES_TEST_URL='postgresql+psycopg://TEST_USER:TEST_PASSWORD@127.0.0.1:5432/nex_test' PYTHONPATH=. python scripts/smoke_postgres.py
 ```
 
-This script creates synthetic records. It must not point at customer data. The full pytest suite has only been run on SQLite.
-
-## Deployment
-
-1. Use a dedicated OS account and persistent absolute paths for the database and product directory. Install the reviewed dependency lock appropriate for your runtime.
-2. Set real Discord credentials, a random `SESSION_SECRET`, `COOKIE_SECURE=true`, `PUBLIC_URL=https://your-domain`, and the matching HTTPS redirect URI. Keep `.env` readable only by the service account. The app rejects HTTPS configuration without secure cookies.
-3. Initialize the database, then run the bot and one Uvicorn worker as separate supervised services. Example systemd units are in `deploy/`; replace paths/user and keep environment files private.
-4. Terminate HTTPS at a reverse proxy (example `deploy/nginx.conf`), forwarding only the app port. Set a 64 KiB body limit and disable OAuth callback query logging. The documented Uvicorn command disables access logs so authorization codes aren't recorded there.
-5. Verify `/health`, sign-in, membership authorization, a free claim and a synthetic paid transaction in a private staging guild before opening to customers. Do not test destructive moderation in a production server.
-6. Rate limits are process-local. Use one web worker; add a shared limiter/queue and strengthen operational monitoring before scaling. Review Discord API rate limits for your own usage and keep dependencies updated with regression tests.
-
-### Privacy and retention
-
-Stored data: Discord IDs, server membership events, settings, moderation reasons, order/entitlement/payment-review records, receipt URLs/references, reviews, points/referrals, XP, giveaways, reminders and audit records. Sessions expire after 8 hours; the bot worker purges expired sessions/states. OAuth tokens are not retained. Product links/files can contain confidential material; limit staff roles and filesystem access.
-
-Keep log channels private. The bot can log message contents only when that feature's logging channel is configured. Do not post private payment information in public channels. Staff transcript exports go to DMs; staff must handle them responsibly. Automated data retention, customer export/deletion and transcript archival are unfinished; operators must establish a retention policy and process deletion requests with a reviewed, backed-up database maintenance procedure respecting foreign keys and required transaction records.
-
-## Project layout
-
-```
-nex/
-  bot.py, config.py, db.py, models.py, schemas.py, security.py
-  cogs/         Discord commands, event listeners and periodic worker
-  services/     Configuration, marketplace, tickets, community, provider adapters
-  dashboard/    OAuth/session handling, FastAPI, Jinja templates and static assets
-  utils/        Embeds, confirmation and role safety
-private/products/  Private operator-supplied assets (ignored by Git)
-tests/             Unit and local integration tests
-scripts/           Explicit PostgreSQL smoke test
-deploy/            Deployment examples
-```
-
-For current limits and the remaining roadmap, read **PROJECT_STATE.md**. Never deploy with test credentials or assume the successful local test suite proves a live Discord installation is configured correctly.
+Read **PROJECT_STATE.md** for actual validation results, current limitations and external checks. Local tests do not establish live Discord/OAuth/Wispbyte operation. The release ZIP is rebuilt with `python scripts/package.py /path/to/NEX_CODEX_FINAL.zip`; it synthesizes `.env` from the blank example and excludes private/runtime data.

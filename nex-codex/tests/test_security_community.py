@@ -13,49 +13,49 @@ from nex.services.automod import Automod
 from nex.schemas import GuildConfig
 
 
-def test_premium_expiry_lifetime_extend_and_auth(db, core, admin, buyer):
+def test_premium_expiry_lifetime_extend_and_auth(db, core, owner, buyer):
     with pytest.raises(DomainError):
         core.premium(buyer, buyer.user_id, 'pro', 30)
-    core.premium(admin, buyer.user_id, 'pro', 1)
+    core.premium(owner, buyer.user_id, 'pro', 1)
     assert core.has_premium(1000, 200)
     with db.transaction() as s:
         row = s.scalar(select(Premium))
         row.expires_at = now()-timedelta(seconds=1)
     assert not core.has_premium(1000, 200)
-    core.premium(admin, 200, 'pro', 2, extend=True)
+    core.premium(owner, 200, 'pro', 2, extend=True)
     assert core.has_premium(1000, 200)
-    core.premium(admin, 200, 'pro', None)
+    core.premium(owner, 200, 'pro', None)
     assert core.has_premium(1000, 200)
     with pytest.raises(DomainError):
-        core.premium(admin, 200, 'pro', 1, extend=True)
-    core.premium(admin, 200, 'pro', revoke=True)
+        core.premium(owner, 200, 'pro', 1, extend=True)
+    core.premium(owner, 200, 'pro', revoke=True)
     assert not core.has_premium(1000, 200)
     with db.sessions() as s:
         assert s.scalar(select(func.count()).select_from(Premium)) == 1
 
 
-def test_free_claim_limit_restriction_and_cooldown(core, market, free, admin, buyer):
-    core.restrict(admin, buyer.user_id, 'Staff review of repeated claim attempts')
+def test_free_claim_limit_restriction_and_cooldown(core, market, free, owner, buyer):
+    core.restrict(owner, buyer.user_id, 'Staff review of repeated claim attempts')
     with pytest.raises(DomainError, match='restricted'):
         market.order(buyer, free.id, 'one')
-    core.restrict(admin, buyer.user_id, 'Appeal accepted', active=False)
+    core.restrict(owner, buyer.user_id, 'Appeal accepted', active=False)
     market.order(buyer, free.id, 'two')
-    second = market.save_product(admin, {'name':'Second template', 'category':'template', 'published':True, 'delivery_value':'test', 'cooldown_seconds':0})
-    core.configure(admin, {'free_claim_cooldown':3600})
+    second = market.save_product(owner, {'name':'Second template', 'category':'template', 'published':True, 'delivery_value':'test', 'cooldown_seconds':0})
+    core.configure(owner, {'free_claim_cooldown':3600})
     with pytest.raises(DomainError, match='cooldown'):
         market.order(buyer, second.id, 'three')
-    core.configure(admin, {'free_claim_cooldown':0, 'free_claim_limit':1})
+    core.configure(owner, {'free_claim_cooldown':0, 'free_claim_limit':1})
     with pytest.raises(DomainError, match='limit'):
         market.order(buyer, second.id, 'four')
 
 
-def test_referral_eligibility_and_duplicate_reward(db, core, market, free, admin, buyer):
+def test_referral_eligibility_and_duplicate_reward(db, core, market, free, owner, buyer):
     c = Community(db)
     with pytest.raises(DomainError):
         c.refer(buyer, buyer.user_id)
     with pytest.raises(DomainError, match='disabled'):
         c.refer(buyer, 999)
-    core.configure(admin, {'rewards_enabled':True})
+    core.configure(owner, {'rewards_enabled':True})
     with pytest.raises(DomainError, match='Claim or purchase'):
         c.refer(buyer, 999)
     market.order(buyer, free.id, 'one')
@@ -69,15 +69,15 @@ def test_referral_eligibility_and_duplicate_reward(db, core, market, free, admin
             s.add(Reward(guild_id=1000,user_id=999,points=10,event_key='referral:1000:200'))
 
 
-def test_review_eligibility_and_duplicate(db, core, market, free, admin, buyer):
+def test_review_eligibility_and_duplicate(db, core, market, free, owner, buyer):
     c = Community(db)
     with pytest.raises(DomainError):
         c.review(buyer, free.id, 5, 'Great')
     market.order(buyer, free.id, 'one')
-    core.configure(admin, {'reviews_allow_free':False})
+    core.configure(owner, {'reviews_allow_free':False})
     with pytest.raises(DomainError):
         c.review(buyer, free.id, 5, 'Great')
-    core.configure(admin, {'reviews_allow_free':True})
+    core.configure(owner, {'reviews_allow_free':True})
     c.review(buyer, free.id, 5, 'Great')
     with pytest.raises(DomainError):
         c.review(buyer, free.id, 5, 'Duplicate')
@@ -105,9 +105,9 @@ def test_private_ticket_permissions_and_duplicates(db, core, buyer):
         tickets.reserve(buyer, 'purchase', 'missing')
 
 
-def test_no_everyone_as_staff(core, admin):
+def test_no_everyone_as_staff(core, owner):
     with pytest.raises(DomainError):
-        core.configure(admin, {'staff_roles':[admin.guild_id]})
+        core.configure(owner, {'staff_roles':[owner.guild_id]})
 
 
 def test_path_traversal_and_symlink_escape(tmp_path):
@@ -169,7 +169,7 @@ def test_automod_signals_and_defaults():
     assert 'blocked domain' not in automod.inspect(1,3,'https://notbad.example/test',0,cfg)
 
 
-def test_persistent_giveaway_draw_and_reroll(db, core, buyer, admin):
+def test_persistent_giveaway_draw_and_reroll(db, core, buyer, owner):
     c=Community(db)
     with db.transaction() as s:
         g=Giveaway(guild_id=1000,channel_id=9,prize='Synthetic prize',winner_count=2,ends_at=now()+timedelta(minutes=1))
@@ -185,12 +185,12 @@ def test_persistent_giveaway_draw_and_reroll(db, core, buyer, admin):
     assert c.draw(g.id).winners == [200]
     with pytest.raises(DomainError):
         c.draw(g.id,buyer)
-    assert c.draw(g.id,admin).winners == [200]
+    assert c.draw(g.id,owner).winners == [200]
 
 
-def test_xp_cooldown(db,core,admin):
+def test_xp_cooldown(db,core,owner):
     from nex.models import Level
-    core.configure(admin,{'leveling_enabled':True})
+    core.configure(owner,{'leveling_enabled':True})
     c=Community(db)
     for _ in range(10):
         c.xp(1000,200)
@@ -198,10 +198,10 @@ def test_xp_cooldown(db,core,admin):
         assert s.scalar(select(Level)).xp == 10
 
 
-def test_hosting_products_no_longer_available(market, admin):
+def test_hosting_products_no_longer_available(market, owner):
     from pydantic import ValidationError
     with pytest.raises(ValidationError):
-        market.save_product(admin, {'name':'Hosting removed','category':'hosting','delivery_kind':'hosting','price':100,'published':True})
+        market.save_product(owner, {'name':'Hosting removed','category':'hosting','delivery_kind':'hosting','price':100,'published':True})
 
 
 async def test_existing_ticket_repairs_overwrites(db,core,buyer):

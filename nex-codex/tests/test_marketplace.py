@@ -15,13 +15,13 @@ def submit(market, buyer, paid):
     return order
 
 
-def test_paid_flow_snapshots_and_delivery(db, market, paid, buyer, admin):
+def test_paid_flow_snapshots_and_delivery(db, market, paid, buyer, owner):
     order = submit(market, buyer, paid)
     with pytest.raises(DomainError):
         market.delivery(buyer, order.id)
     data = ProductInput.model_validate({key: getattr(paid, key) for key in ProductInput.model_fields}).model_dump()
     data.update(price=99900, delivery_value='Changed delivery')
-    market.save_product(admin, data, paid.id)
+    market.save_product(owner, data, paid.id)
     approved = market.review_payment(Actor(300, 1000, frozenset({30})), order.id, True)
     assert approved.amount == 49900
     assert market.delivery(buyer, order.id)['delivery_value'] == 'Synthetic delivery instructions'
@@ -42,11 +42,11 @@ def test_review_authorization(market, paid, buyer, reviewer):
         market.review_payment(reviewer, order.id, True)
 
 
-def test_approval_race_only_one_succeeds(db, market, paid, buyer, admin):
+def test_approval_race_only_one_succeeds(db, market, paid, buyer, owner):
     order = submit(market, buyer, paid)
     def approve(_):
         try:
-            market.review_payment(admin, order.id, True)
+            market.review_payment(owner, order.id, True)
             return True
         except DomainError:
             return False
@@ -75,38 +75,38 @@ def test_concurrent_free_claims(db, market, free, buyer):
     assert sum(bool(x) for x in outcomes) == 1
 
 
-def test_reject_requires_reason_and_allows_resubmit(market, paid, buyer, admin):
+def test_reject_requires_reason_and_allows_resubmit(market, paid, buyer, owner):
     order = submit(market, buyer, paid)
     with pytest.raises(DomainError):
-        market.review_payment(admin, order.id, False)
-    market.review_payment(admin, order.id, False, 'No matching transaction found')
+        market.review_payment(owner, order.id, False)
+    market.review_payment(owner, order.id, False, 'No matching transaction found')
     with pytest.raises(DomainError):
         market.delivery(buyer, order.id)
     market.submit_payment(buyer, order.id, RECEIPT, 'new-reference')
-    market.review_payment(admin, order.id, True)
+    market.review_payment(owner, order.id, True)
     with pytest.raises(DomainError):
-        market.review_payment(admin, order.id, True)
+        market.review_payment(owner, order.id, True)
     with pytest.raises(DomainError):
         market.submit_payment(buyer, order.id, RECEIPT)
 
 
-def test_other_customer_cannot_submit_or_download(market, paid, buyer, admin):
+def test_other_customer_cannot_submit_or_download(market, paid, buyer, owner):
     order = submit(market, buyer, paid)
     other = Actor(777, 1000)
     with pytest.raises(DomainError):
         market.submit_payment(other, order.id, RECEIPT)
-    market.review_payment(admin, order.id, True)
+    market.review_payment(owner, order.id, True)
     with pytest.raises(DomainError):
         market.delivery(other, order.id)
     with pytest.raises(DomainError):
         market.delivery(Actor(buyer.user_id, 9999), order.id)
 
 
-def test_missing_payment_setup_and_currency(market, core, paid, buyer, admin):
-    core.configure(admin, {'upi_id': ''})
+def test_missing_payment_setup_and_currency(market, core, paid, buyer, owner):
+    core.configure(owner, {'upi_id': ''})
     with pytest.raises(DomainError, match='not configured'):
         market.order(buyer, paid.id, 'one')
-    core.configure(admin, {'upi_id': 'synthetic@example', 'currency': 'USD'})
+    core.configure(owner, {'upi_id': 'synthetic@example', 'currency': 'USD'})
     with pytest.raises(DomainError, match='currencies'):
         market.order(buyer, paid.id, 'two')
 
@@ -116,27 +116,27 @@ def test_confirmation_terms_checked_inside_transaction(market, paid, buyer):
         market.order(buyer, paid.id, 'one', expected_terms=(1, paid.currency, paid.terms, paid.name))
 
 
-def test_manual_refund_revokes_access(market, paid, buyer, admin):
+def test_manual_refund_revokes_access(market, paid, buyer, owner):
     order = submit(market, buyer, paid)
-    market.review_payment(admin, order.id, True)
+    market.review_payment(owner, order.id, True)
     with pytest.raises(DomainError):
-        market.change_order(admin, order.id, 'cancelled', 'wrong')
-    market.change_order(admin, order.id, 'manually_refunded', 'Staff completed external transfer')
+        market.change_order(owner, order.id, 'cancelled', 'wrong')
+    market.change_order(owner, order.id, 'manually_refunded', 'Staff completed external transfer')
     with pytest.raises(DomainError):
         market.delivery(buyer, order.id)
 
 
 @pytest.mark.parametrize('changes', [{'price': -1}, {'category': 'invalid'}, {'currency': 'usd'}, {'delivery_kind': 'link', 'delivery_value': 'http://example.com'}, {'delivery_kind':'file', 'delivery_value':'../secret'}, {'delivery_kind':'file', 'delivery_value':'/etc/passwd'}, {'category':'hosting', 'delivery_kind':'instructions'}, {'published':True, 'delivery_value':''}])
-def test_invalid_product_rejected(market, admin, changes):
+def test_invalid_product_rejected(market, owner, changes):
     with pytest.raises(ValidationError):
-        market.save_product(admin, {'name':'Test product','category':'source', **changes})
+        market.save_product(owner, {'name':'Test product','category':'source', **changes})
 
 
 def test_product_write_is_staff_scoped(market, paid, buyer):
     with pytest.raises(DomainError):
         market.save_product(buyer, {'name':'Hacked product','category':'source'}, paid.id)
     with pytest.raises(DomainError):
-        market.save_product(Actor(500, 999, administrator=True), {'name':'Hacked product','category':'source'}, paid.id)
+        market.save_product(Actor(500, 999, administrator=True, owner=True), {'name':'Hacked product','category':'source'}, paid.id)
 
 
 def test_database_reopen_persists(db, market, free, buyer):

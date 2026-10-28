@@ -23,6 +23,10 @@ class Actor:
         if not (self.owner or self.administrator or self.roles.intersection(config.get(key, []))):
             raise DomainError('You do not have permission for this action.')
 
+    def require_owner(self):
+        if not self.owner:
+            raise DomainError("Only a bot owner configured in OWNER_IDS may manage products, shops or settings.")
+
     def require_admin(self):
         if not (self.owner or self.administrator):
             raise DomainError('Administrator permission required.')

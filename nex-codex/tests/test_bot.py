@@ -9,8 +9,9 @@ async def test_extensions_and_slash_registration_without_discord_network(db,tmp_
     async with bot:
         await bot.setup_hook()
         registered={command.name for command in bot.tree.get_commands()}
-        required={'help','ban','unban','kick','timeout','untimeout','warn','history','purge','shop','buy','payment','paymentreview','deliver','ticket','ticketmanage','premium','review','giveaway','reroll','leaderboard','referral','remind','roles','configure','ask'}
-        assert required <= registered
+        required={'help','welcome','leave','say','broadcast','prefix','configure','setup','diagnostics','shop','product','addproduct','productedit','productpublish','createshop','buy','orders','payment','paymentreview','deliver','ticket','ticketmanage','transcript','orderstate','giveaway','reroll'}
+        assert required == registered
+        assert bot.get_cog('Moderation') is None
         for command in bot.tree.get_commands():
             payload=command.to_dict(bot.tree)
             assert payload['name'] and payload['description']

@@ -4,17 +4,39 @@ import json
 import discord
 from discord.ext import commands
 from sqlalchemy import select, func
-from ..models import Order, Ticket, Payment, Review, Audit, Premium, Reward, Entitlement
+from ..models import Order, Ticket, Review
 from ..security import DomainError
-from ..utils.discord import actor, respond, embed, confirm, price_minor
+from ..utils.discord import actor, respond, embed, confirm, price_minor, owner_only
 from ..services.core import audit
 from ..schemas import ProductInput
-from ..utils.storefront import ShopView, CheckoutView, product_embed
+from ..utils.theme import themed_embed
+from ..utils.storefront import ShopView, CheckoutView, ShopPanel, product_embed
 
 
 class Commerce(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+
+    async def cog_load(self):
+        self.bot.add_view(ShopPanel())
+
+    @commands.hybrid_command(extras={'owner_only': True}, help='Post a persistent shop panel in a channel (bot owner).')
+    @owner_only()
+    @commands.guild_only()
+    async def createshop(self, ctx, channel: discord.TextChannel = None):
+        a = actor(ctx)
+        a.require_owner()
+        channel = channel or ctx.channel
+        if channel.guild.id != ctx.guild.id:
+            raise DomainError('Choose a channel in this server.')
+        cfg = self.bot.core.config(ctx.guild.id)
+        item = themed_embed('shop', cfg['shop_title'], cfg['shop_description'], config=cfg)
+        if cfg['shop_image']:
+            item.set_image(url=cfg['shop_image'])
+        message = await channel.send(embed=item, view=ShopPanel(cfg))
+        with self.bot.db.transaction() as session:
+            audit(session, a, 'shop.publish', message.id, channel_id=channel.id)
+        await respond(ctx, 'Shop created', f'Your shop panel is live in {channel.mention}. Its browse button survives bot restarts.')
 
     @commands.hybrid_command(help='Browse templates and bot source code. Filter with category or search.')
     @commands.guild_only()
@@ -31,26 +53,29 @@ class Commerce(commands.Cog):
             if not p or p.category not in ('template', 'source') or p.guild_id != ctx.guild.id or not p.published or p.archived:
                 raise DomainError('Product not found.')
             rating = s.scalar(select(func.avg(Review.rating)).where(Review.product_id == p.id, Review.hidden.is_(False)))
-        item = product_embed(p)
+        cfg = self.bot.core.config(ctx.guild.id)
+        item = product_embed(p, cfg)
         item.add_field(name='Customer rating', value=f'{rating:.1f}/5' if rating else 'Be the first to leave a review.')
-        await ctx.send(embed=item, view=CheckoutView(ctx.author.id, p))
+        await ctx.send(embed=item, view=CheckoutView(ctx.author.id, p, cfg))
 
-    @commands.hybrid_command(help='Create a draft server template or bot source product (staff). Price example: 499.00.')
+    @commands.hybrid_command(name='addproduct', aliases=['productadd'], extras={'owner_only': True}, help='Create a template/source draft (bot owner). Price example: 499.00.')
+    @owner_only()
     @commands.guild_only()
     async def productadd(self, ctx, name: str, category: str, price: str, delivery: str, description: str = ''):
         a = actor(ctx)
         cfg = self.bot.core.config(ctx.guild.id)
-        a.require(cfg)
+        a.require_owner()
         kind = 'link' if delivery.startswith('https://') else 'instructions'
         p = self.bot.market.save_product(a, {'name': name, 'category': category, 'price': price_minor(price), 'currency': cfg['currency'], 'delivery_kind': kind, 'delivery_value': delivery, 'description': description})
         await respond(ctx, 'Product draft created', f'**{p.name}** · {p.currency} {p.price/100:,.2f}\nProduct ID: `{p.id}`\nSet terms with `/productedit`, then use `/productpublish {p.id} true` to open sales.')
 
-    @commands.hybrid_command(help='Edit a product field (staff). Price uses currency units; other values use JSON.')
+    @commands.hybrid_command(extras={'owner_only': True}, help='Edit a product field (bot owner). Prices use currency units; other values use JSON.')
+    @owner_only()
     @commands.guild_only()
     async def productedit(self, ctx, product_id: str, field: str, *, value: str):
         from ..models import Product
         a = actor(ctx)
-        a.require(self.bot.core.config(ctx.guild.id))
+        a.require_owner()
         if field not in ProductInput.model_fields:
             raise DomainError('Unknown product field. Use name, description, price, terms, thumbnail, delivery_kind, delivery_value, published, archived or available.')
         with self.bot.db.sessions() as session:
@@ -68,12 +93,13 @@ class Commerce(commands.Cog):
         self.bot.market.save_product(a, data, product_id)
         await respond(ctx, 'Product updated', f'Updated **{field}** for {product.name}. Existing orders keep their original purchase terms.')
 
-    @commands.hybrid_command(help='Publish or unpublish a product after reviewing its details (staff).')
+    @commands.hybrid_command(extras={'owner_only': True}, help='Publish or unpublish a reviewed product (bot owner).')
+    @owner_only()
     @commands.guild_only()
     async def productpublish(self, ctx, product_id: str, published: bool = True):
         from ..models import Product
         a = actor(ctx)
-        a.require(self.bot.core.config(ctx.guild.id))
+        a.require_owner()
         with self.bot.db.sessions() as session:
             p = session.get(Product, product_id)
             if not p or p.guild_id != ctx.guild.id or p.category not in ('template', 'source'):
@@ -115,7 +141,7 @@ class Commerce(commands.Cog):
         async with lock:
             _, channel = await self.bot.tickets.open(a, guild, customer, 'purchase', order.id)
         cfg = self.bot.core.config(guild.id)
-        item = embed('Manual payment • staff verification required', f'Order: `{order.id}`\nAmount: **{order.currency} {order.amount/100:.2f}**\nPayee: {cfg["payee"]}\nUPI: `{cfg["upi_id"]}`\n\n{cfg["payment_instructions"]}\n\nUpload your receipt with `/payment`. A screenshot alone is not proof of payment. Staff will independently check the transaction.')
+        item = themed_embed('ticket', 'Manual payment • staff verification required', f'Order: `{order.id}`\nAmount: **{order.currency} {order.amount/100:.2f}**\nPayee: {cfg["payee"]}\nUPI: `{cfg["upi_id"]}`\n\n{cfg["payment_instructions"]}\n\nUpload your receipt with `/payment`. A screenshot alone is not proof of payment. Staff will independently check the transaction.', config=cfg)
         if cfg['qr_url']:
             item.set_image(url=cfg['qr_url'])
         await channel.send(content=f'<@{customer.id}>', embed=item)
@@ -134,7 +160,7 @@ class Commerce(commands.Cog):
             lock = self.bot.ticket_locks.setdefault((ctx.guild.id, ctx.author.id), asyncio.Lock())
             async with lock:
                 row, channel = await self.bot.tickets.open(a, ctx.guild, ctx.author, category)
-            await respond(ctx, 'Ticket ready', f'{channel.mention}\nTicket `{row.id}`')
+            await ctx.send(embed=themed_embed('ticket', 'Ticket ready', f'{channel.mention}\nTicket `{row.id}`', config=self.bot.core.config(ctx.guild.id)), ephemeral=True)
 
     @commands.hybrid_command(help='Claim, unclaim, close or reopen a ticket (staff).')
     @commands.guild_only()
@@ -218,57 +244,6 @@ class Commerce(commands.Cog):
         self.bot.market.change_order(actor(ctx), order_id, state, reason)
         await respond(ctx, 'Order updated', 'This command records a decision. It does not send money.')
 
-    @commands.hybrid_command(help='Grant, extend, revoke or inspect premium. Zero days means lifetime.')
-    @commands.guild_only()
-    async def premium(self, ctx, member: discord.Member, action: str = 'inspect', plan: str = 'community', days: int = 30):
-        a = actor(ctx)
-        if action == 'inspect':
-            await respond(ctx, 'Premium status', 'Active' if self.bot.core.has_premium(ctx.guild.id, member.id) else 'Inactive or expired')
-            return
-        if action not in ('grant', 'extend', 'revoke'):
-            raise DomainError('Use grant, extend, revoke or inspect.')
-        self.bot.core.premium(a, member.id, plan, days or None, revoke=action == 'revoke', extend=action == 'extend')
-        await respond(ctx, 'Premium updated', f'{member.display_name} • {action}')
-
-    @commands.hybrid_command(help='Review a product you own.')
-    @commands.guild_only()
-    async def review(self, ctx, product_id: str, rating: int, *, feedback: str):
-        self.bot.community.review(actor(ctx), product_id, rating, feedback)
-        await respond(ctx, 'Review submitted', 'Thank you for sharing your experience.')
-
-    @commands.hybrid_command(help='Hide or restore a product review (staff).')
-    @commands.guild_only()
-    async def reviewmoderate(self, ctx, review_id: int, hidden: bool, *, reason: str):
-        from ..models import Product
-        a = actor(ctx)
-        a.require(self.bot.core.config(ctx.guild.id))
-        if not reason.strip() or len(reason) > 500:
-            raise DomainError('Provide a reason of 1–500 characters.')
-        with self.bot.db.transaction() as s:
-            r = s.get(Review, review_id)
-            p = s.get(Product, r.product_id) if r else None
-            if not p or p.category not in ('template', 'source') or p.guild_id != ctx.guild.id:
-                raise DomainError('Review not found.')
-            r.hidden = hidden
-            audit(s, a, 'review.moderate', review_id, hidden=hidden, reason=reason)
-        await respond(ctx, 'Review visibility updated')
-
-    @commands.hybrid_command(help='Restrict or restore free claims with a recorded staff reason.')
-    @commands.guild_only()
-    async def freebierestrict(self, ctx, member: discord.Member, restricted: bool, *, reason: str):
-        self.bot.core.restrict(actor(ctx), member.id, reason, restricted)
-        await respond(ctx, 'Claim access updated', 'The member can open an appeal ticket to request a review.')
-
-    @commands.hybrid_command(help='Inspect free-claim and membership audit records for a member (staff).')
-    @commands.guild_only()
-    async def freebiehistory(self, ctx, member_id: str):
-        a = actor(ctx)
-        a.require(self.bot.core.config(ctx.guild.id))
-        if not member_id.isdecimal():
-            raise DomainError('Use a numeric Discord user ID.')
-        with self.bot.db.sessions() as s:
-            rows = list(s.scalars(select(Order).where(Order.guild_id == ctx.guild.id, Order.user_id == int(member_id), Order.amount == 0).order_by(Order.created_at.desc()).limit(10)))
-        await respond(ctx, 'Free claim history', '\n'.join(f'{r.created_at:%Y-%m-%d} • {r.snapshot["name"]} • {r.state}' for r in rows) or 'No claims. Leaving a server alone is not evidence of abuse.')
 
 
 async def setup(bot):

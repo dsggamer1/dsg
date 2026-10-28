@@ -14,7 +14,7 @@ from nex.cogs.commerce import Commerce
 
 
 async def new_bot(db, tmp_path):
-    bot = NexBot(Settings(_env_file=None, product_root=tmp_path, sync_commands=False), db)
+    bot = NexBot(Settings(_env_file=None, product_root=tmp_path, sync_commands=False, owner_ids=[100]), db)
     await bot._async_setup_hook()
     await bot.setup_hook()
     return bot
@@ -29,7 +29,7 @@ async def test_startup_automatically_registers_commands(db, tmp_path):
         assert bot.tree.sync.await_args_list[0].kwargs == {}
         assert bot.tree.sync.await_args_list[1].kwargs['guild'].id == 1000
         assert bot.tree.get_command('hosting') is None
-        assert bot.tree.get_command('productadd') is not None
+        assert bot.tree.get_command('addproduct') is not None
         assert bot.tree.get_command('setup') is not None
         assert bot.tree.get_command('diagnostics') is not None
 
@@ -45,7 +45,7 @@ async def test_prefix_respects_environment_then_guild_override(db, tmp_path):
     await bot.close()
 
 
-@pytest.mark.parametrize('name,private', [('ticket',True),('deliver',True),('paymentreview',True),('poll',False),('giveaway',False),('shop',False)])
+@pytest.mark.parametrize('name,private', [('ticket',True),('deliver',True),('paymentreview',True),('broadcast',True),('giveaway',False),('shop',False)])
 async def test_slower_slash_commands_are_acknowledged(db,name,private):
     bot = NexBot(Settings(_env_file=None, sync_commands=False), db)
     ctx = SimpleNamespace(interaction=SimpleNamespace(response=SimpleNamespace(is_done=lambda:False)),command=SimpleNamespace(name=name),defer=AsyncMock())
@@ -57,19 +57,19 @@ async def test_slower_slash_commands_are_acknowledged(db,name,private):
     await bot.close()
 
 
-async def test_real_prefix_ping_invocation(db,tmp_path,monkeypatch):
+async def test_real_prefix_help_invocation(db,tmp_path,monkeypatch):
     from discord.ext import commands
     bot = await new_bot(db,tmp_path)
     bot._connection.user=discord.ClientUser(state=bot._connection,data={'id':'999','username':'NEX','discriminator':'0','avatar':None,'bot':True})
     channel=SimpleNamespace(id=77,guild=None)
-    message=discord.Message(state=bot._connection,channel=channel,data={'id':'555','type':0,'content':'!ping','author':{'id':'200','username':'Test','discriminator':'0','avatar':None},'attachments':[],'embeds':[],'mentions':[],'mention_roles':[],'pinned':False,'tts':False,'edited_timestamp':None})
+    message=discord.Message(state=bot._connection,channel=channel,data={'id':'555','type':0,'content':'!help','author':{'id':'200','username':'Test','discriminator':'0','avatar':None},'attachments':[],'embeds':[],'mentions':[],'mention_roles':[],'pinned':False,'tts':False,'edited_timestamp':None})
     send=AsyncMock()
     monkeypatch.setattr(commands.Context,'send',send)
     ctx=await bot.get_context(message)
-    assert ctx.command.name == 'ping'
+    assert ctx.command.name == 'help'
     await ctx.command.invoke(ctx)
     assert send.await_count==1
-    assert send.await_args.kwargs['embed'].title=='Connection healthy'
+    assert send.await_args.kwargs['embed'].title.endswith('Command center')
     await bot.close()
 
 
@@ -132,11 +132,11 @@ async def test_failed_discord_delivery_does_not_mark_delivered(db,core,market,fr
     await bot.close()
 
 
-async def test_discord_staff_product_management(db,core,admin,tmp_path,monkeypatch):
+async def test_discord_staff_product_management(db,core,owner,tmp_path,monkeypatch):
     bot=await new_bot(db,tmp_path)
     import importlib
     module=importlib.import_module("nex.cogs.commerce")
-    monkeypatch.setattr(module,'actor',lambda ctx:admin)
+    monkeypatch.setattr(module,'actor',lambda ctx:owner)
     ctx=SimpleNamespace(guild=SimpleNamespace(id=1000),send=AsyncMock())
     cog=bot.get_cog('Commerce')
     command_type=type(cog)
@@ -167,9 +167,9 @@ def test_price_input_rejects_unsafe_values(value):
 
 
 @pytest.mark.parametrize('changes',[{'self_roles':[30]},{'auto_role':20},{'level_rewards':{'5':30}}])
-def test_configuration_cannot_self_assign_staff_roles(core,admin,changes):
+def test_configuration_cannot_self_assign_staff_roles(core,owner,changes):
     with pytest.raises(DomainError,match='Staff and payment'):
-        core.configure(admin,changes)
+        core.configure(owner,changes)
 
 
 def test_staff_role_rejected_even_without_discord_permission_bits():
@@ -188,12 +188,12 @@ async def test_help_and_storefront_payloads_fit_discord_limits(db,core,tmp_path)
     import importlib
     bot=await new_bot(db,tmp_path)
     module=importlib.import_module('nex.cogs.utility')
-    ctx=SimpleNamespace(send=AsyncMock())
+    ctx=SimpleNamespace(send=AsyncMock(),author=SimpleNamespace(id=100),guild=SimpleNamespace(id=1000))
     cog=bot.get_cog('Utility')
     await type(cog).help.callback(cog,ctx)
     card=ctx.send.await_args.kwargs['embed']
     assert len(card)<=6000 and len(card.fields)<=25
-    select=module.HelpSelect(bot)
+    select=module.HelpSelect(bot, owner=True)
     interaction=SimpleNamespace(response=SimpleNamespace(edit_message=AsyncMock()))
     for option in select.options:
         select._values=[option.value]
