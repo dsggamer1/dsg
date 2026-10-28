@@ -39,7 +39,7 @@ async def test_help_sends_home_animation_with_live_commands(db,core,tmp_path):
     assert '/shop' in str(captured['embed'].to_dict())
     assert '/addproduct' not in str(captured['embed'].to_dict())
     assert captured['view'].user_id==200
-    assert captured['view'].children[0].options[0].value=='Home'
+    assert next(child for child in captured['view'].children if isinstance(child, discord.ui.Select)).options[0].value=='Home'
     await bot.close()
 
 
@@ -93,7 +93,7 @@ async def test_missing_assets_or_attach_permission_keep_help_usable(db,core,tmp_
     await type(cog).help.callback(cog,ctx)
     sent=ctx.send.await_args.kwargs
     assert 'file' not in sent and not sent['embed'].image.url
-    menu=sent['view'].children[0]
+    menu=next(child for child in sent['view'].children if isinstance(child, discord.ui.Select))
     menu._values=['Home']
     interaction=SimpleNamespace(response=SimpleNamespace(defer=AsyncMock()),edit_original_response=AsyncMock())
     await menu.callback(interaction)
@@ -101,3 +101,43 @@ async def test_missing_assets_or_attach_permission_keep_help_usable(db,core,tmp_
     assert '/shop' in str(interaction.edit_original_response.await_args.kwargs['embed'].to_dict())
     sent['view'].stop()
     await bot.close()
+
+
+async def test_buttons_and_dropdown_share_navigation(db,core,tmp_path):
+    from nex.cogs.utility import HelpView, HelpSelect
+    bot=await new_bot(db,tmp_path)
+    view=HelpView(200)
+    menu=HelpSelect(bot,media_enabled=False)
+    view.add_item(menu)
+    view.update_navigation('Home',menu.options)
+    interaction=SimpleNamespace(response=SimpleNamespace(defer=AsyncMock()),edit_original_response=AsyncMock())
+    assert view.previous.disabled and view.home.disabled and not view.next_page.disabled
+    for section in ['Utility','Commerce','Community']:
+        await view.next_page.callback(interaction)
+        assert view.current_section==section
+        assert [o.value for o in menu.options if o.default]==[section]
+        assert interaction.edit_original_response.await_args.kwargs['view'] is view
+    assert view.next_page.disabled
+    await view.previous.callback(interaction)
+    assert view.current_section=='Commerce' and not view.next_page.disabled
+    await view.home.callback(interaction)
+    assert view.current_section=='Home' and view.previous.disabled and view.home.disabled
+    menu._values=['Community']
+    await menu.callback(interaction)
+    assert view.current_section=='Community' and view.next_page.disabled
+    view.stop()
+    await bot.close()
+
+
+@pytest.mark.parametrize('deleted',[False,True])
+async def test_expired_menu_disables_controls_even_if_message_deleted(deleted):
+    from nex.cogs.utility import HelpView
+    view=HelpView(200)
+    message=SimpleNamespace(edit=AsyncMock())
+    if deleted:
+        message.edit.side_effect=discord.NotFound(SimpleNamespace(status=404,reason='Not Found'), 'Deleted')
+    view.message=message
+    await view.on_timeout()
+    assert all(child.disabled for child in view.children)
+    message.edit.assert_awaited_once_with(view=view)
+    view.stop()

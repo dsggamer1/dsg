@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.1 — 2026-10-28
+
+- Refine all four original help animations with an orbital NEX emblem, glass cards, subtle particles and coordinated category accents; 32-frame, 3.2-second loops.
+- Add real Previous / Home / Next buttons synchronized with category selection and personal interaction checks.
+- Disable expired help controls after three minutes, tolerating deleted or inaccessible messages.
+- Preserve owner/admin permissions, automatic emoji startup and manual QR/UPI shop flows.
+
 ## 1.4.0 — 2026-10-28
 
 - Add a complete NEX CODEX animated help theme: cyan/blue cards, the supplied icon set and original Home/community/shop-ticket/giveaway GIF pages.

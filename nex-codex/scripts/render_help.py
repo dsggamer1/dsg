@@ -50,69 +50,100 @@ def icon(name,size):
   return im.convert('RGBA').resize((size,size),Image.Resampling.LANCZOS)
 
 
-def background():
- # Low-resolution radial lighting, upscaled to keep the optional build lightweight.
- small=Image.new('RGB',(225,165)); p=small.load()
+FRAMES = 32
+ACCENTS = {'home': (56, 207, 239), 'utility': (65, 219, 207), 'commerce': (95, 165, 255), 'community': (133, 166, 255)}
+HEROES = {
+ 'home': ('A better place', 'to belong.', 'Your community. Your collection. Your NEX CODEX.'),
+ 'utility': ('Make every', 'hello count.', 'Welcome people in. Share what matters.'),
+ 'commerce': ('Your next idea', 'starts here.', 'Templates. Source code. A place to start building.'),
+ 'community': ('A little surprise.', 'A shared moment.', 'Give your community something to look forward to.'),
+}
+
+
+def background(key):
+ small = Image.new('RGB', (225, 165)); pixels = small.load()
+ accent = ACCENTS[key]
  for y in range(165):
   for x in range(225):
-   cyan=math.exp(-(((x-220)/120)**2+((y-12)/75)**2))
-   blue=math.exp(-(((x-10)/150)**2+((y-145)/90)**2))
-   p[x,y]=(int(8+3*cyan+8*blue),int(13+30*cyan+8*blue),int(27+37*cyan+40*blue))
+   light = math.exp(-(((x-193)/76)**2 + ((y-40)/67)**2))
+   indigo = math.exp(-(((x-3)/138)**2 + ((y-150)/78)**2))
+   pixels[x,y] = (int(6+accent[0]*.08*light+8*indigo), int(11+accent[1]*.12*light+7*indigo), int(24+accent[2]*.15*light+25*indigo))
  return small.resize((WIDTH,HEIGHT),Image.Resampling.BICUBIC).convert('RGBA')
 
 
 def render(key,index):
- t=index/16*math.tau
- im=background(); d=ImageDraw.Draw(im)
- d.rounded_rectangle((18,18,881,641),radius=30,outline=(44,78,105),width=1)
- im.alpha_composite(icon('logo',40),(40,37))
- d.text((94,42),'NEX CODEX',font=font(21,True),fill=(190,235,249))
- d.rounded_rectangle((729,42,857,73),radius=15,fill=(17,43,63),outline=(43,100,125))
- d.ellipse((744,54,751,61),fill=(62,211,228))
- d.text((773,47),f'{list(PAGES).index(key)+1:02} / 04',font=font(15,True),fill=(124,226,239))
- title,subtitle,cards=PAGES[key]
- d.text((40,98),title,font=font(42,True),fill=(226,247,255))
- d.text((42,158),subtitle,font=font(17),fill=(152,184,207))
- d.line((42,199,857,199),fill=(37,68,91))
- for n,(glyph,label,description) in enumerate(cards):
-  x,y=40+(n%2)*420,223+(n//2)*92
-  active=n==int(index/16*6)
-  d.rounded_rectangle((x,y,x+400,y+78),radius=18,fill=(20,39,59),outline=(50,147,178) if active else (39,64,87),width=2 if active else 1)
-  im.alpha_composite(icon(glyph,48),(x+13,y+15))
-  d.text((x+76,y+13),label,font=font(19,True),fill=(212,239,249))
-  d.text((x+76,y+43),description,font=font(13),fill=(148,178,199))
- # Restrained moving light particles: no flashing or copied third-party artwork.
- overlay=Image.new('RGBA',im.size); od=ImageDraw.Draw(overlay)
- for n in range(15):
-  x=32+(n*157+index*1.4)%832
-  y=28+(n*83)%592
-  alpha=int(45+35*(math.sin(t+n)+1)/2)
-  od.ellipse((x,y,x+2,y+2),fill=(103,218,251,alpha))
- im=Image.alpha_composite(im,overlay)
+ phase=index/FRAMES*math.tau
+ accent=ACCENTS[key]
+ im=background(key)
+ glow=Image.new('RGBA',im.size); gd=ImageDraw.Draw(glow)
+ radius=100+math.sin(phase)*4
+ gd.ellipse((733-radius,177-radius,733+radius,177+radius),fill=(*accent,48))
+ glow=glow.filter(ImageFilter.GaussianBlur(44))
+ im=Image.alpha_composite(im,glow); d=ImageDraw.Draw(im)
+ # Fine grid, recessed border and a floating brand header.
+ for x in range(40,880,40): d.line((x,90,x,550),fill=(20,31,48))
+ for y in range(110,550,40): d.line((28,y,872,y),fill=(20,31,48))
+ d.rounded_rectangle((16,16,883,643),radius=28,outline=(43,70,91),width=1)
+ d.line((43,16,857,16),fill=(*accent,180),width=1)
+ im.alpha_composite(icon('logo',40),(35,31))
+ d.text((87,35),'NEX CODEX',font=font(23,True),fill=(222,244,255))
+ d.text((89,64),'YOUR COMMUNITY, CONNECTED',font=font(9,True),fill=(122,165,191))
+ d.rounded_rectangle((746,36,859,70),radius=16,fill=(15,33,52),outline=(49,85,108))
+ d.text((773,43),f'{list(PAGES).index(key)+1:02} / 04',font=font(15,True),fill=accent)
+ # Hero: intentionally generous text sizes; live command text sits outside the GIF.
+ line1,line2,subtitle=HEROES[key]
+ d.text((38,102),'THE NEX CODEX COMMAND CENTER',font=font(11,True),fill=accent)
+ d.text((35,122),line1,font=font(45,True),fill=(235,248,255))
+ d.text((35,174),line2,font=font(45,True),fill=accent)
+ d.text((39,237),subtitle,font=font(15),fill=(154,185,208))
+ # Orbital emblem and traveling pinpoints form a seamless, non-flashing loop.
+ d.ellipse((662,106,804,248),outline=(42,88,115),width=1)
+ d.ellipse((650,94,816,260),outline=(25,56,80),width=1)
+ d.arc((656,100,810,254),int(index/FRAMES*360),int(index/FRAMES*360)+72,fill=accent,width=3)
+ for offset in (0, math.pi):
+  px=733+83*math.cos(phase+offset); py=177+83*math.sin(phase+offset)
+  d.ellipse((px-3,py-3,px+3,py+3),fill=accent)
+ im.alpha_composite(icon('logo',94),(686,130))
  d=ImageDraw.Draw(im)
- d.rounded_rectangle((40,512,859,550),radius=12,fill=(15,35,53),outline=(34,65,86))
- d.line((55,524,55,537),fill=(56,207,239),width=3)
- d.text((69,522),'Choose a category in the dropdown below to explore commands.',font=font(14),fill=(173,205,225))
- d.rounded_rectangle((40,570,859,626),radius=18,fill=(12,28,45),outline=(37,68,91))
+ # A warm highlight gently passes over the cards; no rapid card switching.
+ for n,(glyph,label,description) in enumerate(PAGES[key][2]):
+  x,y=35+(n%2)*420,282+(n//2)*86
+  pulse=(1+math.cos(phase-n*.8))/2
+  border=tuple(int(a+(b-a)*pulse*.42) for a,b in zip((36,64,87),accent))
+  d.rounded_rectangle((x,y,x+410,y+74),radius=17,fill=(16,32,51),outline=border,width=1)
+  d.line((x+19,y+1,x+389,y+1),fill=(43,69,91))
+  d.rounded_rectangle((x+12,y+13,x+60,y+61),radius=14,fill=(11,25,42))
+  im.alpha_composite(icon(glyph,44),(x+14,y+15)); d=ImageDraw.Draw(im)
+  d.text((x+76,y+11),label,font=font(20,True),fill=(215,239,251))
+  d.text((x+76,y+43),description,font=font(13),fill=(149,179,202))
+ # Quiet drifting particles use closed paths, so the last frame loops cleanly.
+ for n in range(12):
+  px=38+(n*137)%820+3*math.sin(phase+n)
+  py=92+(n*67)%470+3*math.cos(phase+n)
+  d.ellipse((px,py,px+1,py+1),fill=(75,130,159))
+ d.text((38,550),'Choose a category below. Make yourself at home.',font=font(13),fill=(137,171,195))
+ d.rounded_rectangle((35,581,864,628),radius=16,fill=(10,24,40),outline=(36,63,85))
  for n,(target,label,glyph) in enumerate(NAV):
-  x=53+n*200
+  x=43+n*204
   selected=target==key
-  if selected:d.rounded_rectangle((x,578,x+190,618),radius=12,fill=(25,66,90),outline=(51,163,198))
-  im.alpha_composite(icon(glyph,28),(x+10,584))
-  d=ImageDraw.Draw(im)
-  d.text((x+48,588),label,font=font(14,True),fill=(168,234,249) if selected else (127,157,182))
+  if selected:
+   d.rounded_rectangle((x,588,x+195,621),radius=11,fill=(21,52,74),outline=accent)
+  im.alpha_composite(icon(glyph,25),(x+8,592)); d=ImageDraw.Draw(im)
+  d.text((x+43,595),label,font=font(14,True),fill=(187,231,250) if selected else (116,150,177))
  return im.convert('RGB')
 
 
 def main():
  DEST.mkdir(parents=True,exist_ok=True)
  for key in PAGES:
-  frames=[render(key,i) for i in range(16)]
-  # One shared palette prevents shimmer in text and static UI elements.
-  palette=frames[0].quantize(colors=128)
+  frames=[render(key,i) for i in range(FRAMES)]
+  # Build a shared palette from several phases to keep typography stable.
+  sample=Image.new('RGB',(WIDTH*4,HEIGHT))
+  for n,i in enumerate((0,8,16,24)): sample.paste(frames[i],(n*WIDTH,0))
+  palette=sample.quantize(colors=256)
   indexed=[f.quantize(palette=palette,dither=Image.Dither.NONE) for f in frames]
   path=DEST/f'{key}.gif'
-  indexed[0].save(path,save_all=True,append_images=indexed[1:],duration=150,loop=0,optimize=True,disposal=1)
+  indexed[0].save(path,save_all=True,append_images=indexed[1:],duration=100,loop=0,optimize=True,disposal=1)
   assert path.stat().st_size < 4*1024*1024
   print(key,path.stat().st_size,'bytes')
 

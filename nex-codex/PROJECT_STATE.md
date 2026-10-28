@@ -1,6 +1,6 @@
 # NEX CODEX project state
 
-Updated 2026-10-28. Version **1.4.0**. Focused community and template/source store. This replaces the earlier broad all-in-one command surface at the user's request.
+Updated 2026-10-28. Version **1.4.1**. Focused community and template/source store. This replaces the earlier broad all-in-one command surface at the user's request.
 
 ## Active command contract
 
@@ -24,14 +24,15 @@ Updated 2026-10-28. Version **1.4.0**. Focused community and template/source sto
 
 ## Animated help update
 
+- Refined orbital emblem, glass cards, cyan/teal/blue category accents and subtle looping particles. All four 900×660 GIFs contain 32 frames, loop over 3.2 seconds and remain below 270KB. No startup image rendering is required.
 - Original NEX-branded cyan/blue animated help artwork inspired by the supplied reference; only active feature families shown. Four matching GIFs bundled in the ZIP, with no third-party brand copied.
-- Home/category dropdown navigation, actual registered commands and owner/admin visibility preserved. Personal controls, deferred uploads and old attachment replacement; fallback to text when artwork/Attach Files is unavailable.
+- Home/category dropdown and real Previous / Home / Next buttons, synchronized selection and disabled controls on timeout; actual registered commands and owner/admin visibility preserved. Personal controls, deferred uploads and old attachment replacement; fallback to text when artwork/Attach Files is unavailable.
 - `/help` works for prefix/slash forms. Optional build script uses Pillow/fonts only to regenerate assets; Wispbyte needs the shipped files and existing runtime requirements.
-- Extracted help release:76 affected tests passed on Python3.11.18 and Python3.14.4 (2 and1510 upstream warnings), covering media, navigation, actual prefix invocation/slash deferral, owner/admin visibility, existing commerce controls, packaging and public dashboard health. Prior matching database/payment/ticket/application-emoji checks are reused; the full suite was not rerun for this help-only update. compileall/import/27-command serialization/blank-token startup checks passed on both runtimes. All four GIFs fully decoded; cloud Chromium confirmed animation playback and mobile scaling without overflow. Live Discord media rendering remains unverified without a token.
+- Extracted polished help release:79 affected tests passed on Python3.11.18 and Python3.14.4 (2 and1591 upstream warnings), covering media, navigation, actual prefix invocation/slash deferral, owner/admin visibility, existing commerce controls, packaging and public dashboard health. Prior matching database/payment/ticket/application-emoji checks are reused; the full suite was not rerun for this help-only update. compileall/import/27-command serialization/blank-token startup checks passed on both runtimes. All four GIFs fully decoded; cloud Chromium confirmed animation playback and mobile scaling without overflow. Live Discord media rendering remains unverified without a token.
 
 ## Validation
 
-The extracted automatic-startup ZIP passed the **151-test full suite on Python3.11.18 and Python3.14.4** (2 and1498 upstream warnings). A subsequent transport-error fix added one synthetic disconnect case; the complete **11-test application-startup module passed again on both runtimes** (1 and354 warnings). Other matching suite results were reused; the updated suite contains 152 cases. All external API calls are mocked. Checks cover default-on startup, 49 uploads/restart reuse, actual returned IDs in embeds/buttons, setup ordering, overrides, partial failure/resume, missing/invalid assets, capacity, disable, HTTP/transport denial, missing identity and bounded timeout. Both runtimes passed compileall, pip check, module imports, 27-command serialization, blank credential checks and controlled missing-token startup.
+The extracted automatic-startup ZIP passed the **151-test full suite on Python3.11.18 and Python3.14.4** (2 and1498 upstream warnings). A subsequent transport-error fix added one synthetic disconnect case; the complete **11-test application-startup module passed again on both runtimes** (1 and354 warnings). Other matching suite results were reused; that startup revision contained 152 cases. All external API calls are mocked. Checks cover default-on startup, 49 uploads/restart reuse, actual returned IDs in embeds/buttons, setup ordering, overrides, partial failure/resume, missing/invalid assets, capacity, disable, HTTP/transport denial, missing identity and bounded timeout. Both runtimes passed compileall, pip check, module imports, 27-command serialization, blank credential checks and controlled missing-token startup.
 
 SQLite schema initialization, all-module imports, controlled missing-token startup, archive/source/credential checks and responsive public dashboard checks are recorded in the accompanying audit. The earlier PostgreSQL17 schema/payment/concurrent-approval smoke is reused for unchanged SQL/model/payment behavior; this revision has no fresh PostgreSQL run.
 

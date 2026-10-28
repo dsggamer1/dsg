@@ -35,7 +35,7 @@ def create_app(cfg=None, database=None):
         if database is None:
             db.engine.dispose()
 
-    app = FastAPI(title='NEX CODEX', version='1.4.0', lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title='NEX CODEX', version='1.4.1', lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.config, app.state.db = cfg, db
     app.state.core, app.state.market, app.state.community = Core(db), Marketplace(db, cfg.product_root), Community(db)
     app.state.limiter = RateLimiter()
@@ -75,7 +75,7 @@ def create_app(cfg=None, database=None):
             s.execute(text('SELECT 1'))
             bot = s.get(Heartbeat, 'bot')
             online = bool(bot and bot.updated_at > now()-timedelta(seconds=90))
-        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.4.0'}
+        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.4.1'}
 
     @app.get('/auth/login')
     async def login(request: Request):

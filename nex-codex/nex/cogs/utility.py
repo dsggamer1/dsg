@@ -33,11 +33,52 @@ def help_card(bot, owner, administrator, config, section='Home'):
             item.add_field(name=f'{emoji_for(key,config)} {title}', value=' · '.join(f'`/{c.name}`' for c in commands_here), inline=False)
     if owner:
         item.add_field(name='Owner workspace', value='/setup · /welcome · /leave · /addproduct · /createshop · /configure', inline=False)
-    item.set_footer(text='NEX CODEX • Select a category below • Only you can control this menu')
+    item.set_footer(text='NEX CODEX • Choose a category or use the buttons • Personal menu · 3 minutes')
     return item
 
 
 class HelpView(PersonalView):
+    def __init__(self, user_id, config=None):
+        super().__init__(user_id)
+        self.current_section = 'Home'
+        self.message = None
+        self.previous.emoji = emoji_for('previous', config)
+        self.home.emoji = emoji_for('help', config)
+        self.next_page.emoji = emoji_for('next', config)
+
+    def update_navigation(self, section, options):
+        self.current_section = section
+        self.previous.disabled = section == options[0].value
+        self.home.disabled = section == 'Home'
+        self.next_page.disabled = section == options[-1].value
+
+    async def navigate(self, interaction, step):
+        menu = next(child for child in self.children if isinstance(child, HelpSelect))
+        sections = [option.value for option in menu.options]
+        index = 0 if step is None else max(0, min(len(sections)-1, sections.index(self.current_section)+step))
+        await menu.show_page(interaction, sections[index])
+
+    @discord.ui.button(label='Previous', style=discord.ButtonStyle.secondary, row=1, disabled=True)
+    async def previous(self, interaction, button):
+        await self.navigate(interaction, -1)
+
+    @discord.ui.button(label='Home', style=discord.ButtonStyle.primary, row=1, disabled=True)
+    async def home(self, interaction, button):
+        await self.navigate(interaction, None)
+
+    @discord.ui.button(label='Next', style=discord.ButtonStyle.secondary, row=1)
+    async def next_page(self, interaction, button):
+        await self.navigate(interaction, 1)
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+        if self.message is not None:
+            try:
+                await self.message.edit(view=self)
+            except discord.HTTPException:
+                pass  # The original message may have been deleted or become inaccessible.
+
     async def interaction_check(self, interaction):
         if interaction.user.id != self.user_id:
             await interaction.response.send_message('Run /help to open your own command center.', ephemeral=True)
@@ -57,13 +98,18 @@ class HelpSelect(discord.ui.Select):
         self.media_enabled = media_enabled
         options = [discord.SelectOption(label='Home', value='Home', emoji=emoji_for('help', config), description='Your NEX CODEX command center')]
         options.extend(discord.SelectOption(label=HELP_CATEGORIES[name][1], value=name, emoji=emoji_for(HELP_CATEGORIES[name][0], config)) for name in HELP_CATEGORIES if bot.get_cog(name) and visible_commands(bot.get_cog(name), owner, administrator))
-        super().__init__(placeholder='Explore NEX CODEX', options=options)
+        options[0].default = True
+        super().__init__(placeholder='Explore NEX CODEX', options=options, row=0)
 
     async def callback(self, interaction):
-        section = self.values[0]
+        await self.show_page(interaction, self.values[0])
+
+    async def show_page(self, interaction, section):
         item = help_card(self.bot, self.owner, self.administrator, self.config, section)
         for option in self.options:
             option.default = option.value == section
+        if isinstance(self.view, HelpView):
+            self.view.update_navigation(section, self.options)
         # Acknowledge before uploading category artwork, including on slower hosts.
         await interaction.response.defer()
         file = help_file(section) if self.media_enabled else None
@@ -88,16 +134,18 @@ class Utility(commands.Cog):
         administrator = bool(ctx.guild and getattr(getattr(ctx.author, 'guild_permissions', None), 'administrator', False))
         cfg = self.bot.core.config(ctx.guild.id) if ctx.guild else None
         media_enabled = can_attach(ctx)
-        view = HelpView(ctx.author.id)
-        view.add_item(HelpSelect(self.bot, owner, cfg, administrator, media_enabled))
+        view = HelpView(ctx.author.id, cfg)
+        menu = HelpSelect(self.bot, owner, cfg, administrator, media_enabled)
+        view.add_item(menu)
+        view.update_navigation('Home', menu.options)
         item = help_card(self.bot, owner, administrator, cfg)
         file = help_file('Home') if media_enabled else None
         if file:
             with closing(file):
                 item.set_image(url='attachment://nex_help.gif')
-                await ctx.send(embed=item, view=view, file=file, ephemeral=True)
+                view.message = await ctx.send(embed=item, view=view, file=file, ephemeral=True)
         else:
-            await ctx.send(embed=item, view=view, ephemeral=True)
+            view.message = await ctx.send(embed=item, view=view, ephemeral=True)
 
     async def membership_message(self, ctx, kind, channel, message, enabled):
         a = actor(ctx)
