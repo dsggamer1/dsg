@@ -4,7 +4,7 @@ import logging
 import discord
 from discord.ext import commands, tasks
 from sqlalchemy import select, delete
-from ..models import Audit, Entitlement, Giveaway, Reminder, Hosting, Heartbeat, OAuthState, WebSession, now
+from ..models import Audit, Entitlement, Giveaway, Reminder, Heartbeat, OAuthState, WebSession, now
 from ..security import Actor, DomainError
 from ..services.core import audit
 from ..services.automod import Automod
@@ -46,7 +46,7 @@ class Events(commands.Cog):
         role = member.guild.get_role(cfg['auto_role'])
         if role:
             try:
-                safe_role(member.guild, None, role)
+                safe_role(member.guild, None, role, cfg['staff_roles'] + cfg['payment_roles'])
                 await member.add_roles(role, reason='Configured welcome role')
             except (discord.HTTPException, DomainError):
                 await self.log(member.guild, 'Auto-role unavailable', 'Check the configured role and bot hierarchy.')
@@ -101,7 +101,7 @@ class Events(commands.Cog):
             role = message.guild.get_role(cfg['level_rewards'].get(str(level)))
             if role:
                 try:
-                    safe_role(message.guild, None, role)
+                    safe_role(message.guild, None, role, cfg['staff_roles'] + cfg['payment_roles'])
                     await message.author.add_roles(role, reason=f'Level {level} reward')
                 except (discord.HTTPException, DomainError):
                     await self.log(message.guild, 'Level reward unavailable', f'Role assignment failed for level {level}.')
@@ -157,8 +157,6 @@ class Events(commands.Cog):
             h.updated_at, h.details = now(), {'guilds': len(self.bot.guilds), 'latency_ms': round(self.bot.latency*1000) if self.bot.is_ready() else None}
             s.execute(delete(OAuthState).where(OAuthState.expires_at < now()))
             s.execute(delete(WebSession).where(WebSession.expires_at < now()))
-            for hosting in s.scalars(select(Hosting).where(Hosting.expires_at <= now(), Hosting.state.in_(['running', 'stopped']))):
-                hosting.state = 'expired'  # Records expiry only; never claims provider shutdown.
         with self.bot.db.sessions() as s:
             due = list(s.scalars(select(Giveaway).where(Giveaway.state == 'open', Giveaway.ends_at <= now()).limit(50)))
             reminders = list(s.scalars(select(Reminder).where(Reminder.sent.is_(False), Reminder.due_at <= now()).limit(50)))

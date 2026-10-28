@@ -3,7 +3,7 @@ import secrets
 import discord
 from discord.ext import commands
 from sqlalchemy import select, func
-from ..models import Level, Giveaway, Reminder, Reward, Hosting, Heartbeat, now
+from ..models import Level, Giveaway, Reminder, Reward, Heartbeat, now
 from ..security import DomainError
 from ..utils.discord import actor, respond, embed
 from ..services.core import audit

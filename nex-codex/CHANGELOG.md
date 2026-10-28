@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 — 2026-10-28
+
+- Audited the complete source ZIP with isolated dependencies and Python 3.11/3.14 validation.
+- Publish slash commands automatically at startup, optionally to configured guilds; defer interactions before slow operations, honor the initial environment prefix, and report token/intents failures clearly.
+- Add a four-category command center, setup/diagnostic commands, paginated product dropdowns, branded product cards and personal checkout confirmation buttons.
+- Add Discord staff product draft/edit/publication commands with exact decimal price validation.
+- Remove active hosting commands, dashboard pages, product categories and provider interfaces at the user's request; preserve legacy database data and prevent historical hosting approval/delivery.
+- Block staff/reviewer roles from self-service/automatic assignment; restore existing private-ticket overwrites, handle malformed automod links and bound public pagination.
+- Restrict the distribution manifest, exclude environment overrides/runtime data, and reject populated secret examples.
+- Add regression coverage for commands, checkout, failed delivery, role escalation, protected downloads and ZIP safety.
+
 
 - Added `main.py` as a Python hosting-panel entry point and documented upload/startup instructions.
 - Added a starter `.env` with empty credentials at the user's request.

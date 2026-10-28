@@ -198,19 +198,39 @@ def test_xp_cooldown(db,core,admin):
         assert s.scalar(select(Level)).xp == 10
 
 
-def test_hosting_requires_paid_and_manual_result(db,core,market,admin,buyer):
-    from tests.test_marketplace import RECEIPT
-    c=Community(db)
-    p=market.save_product(admin,{'name':'Synthetic hosting','category':'hosting','delivery_kind':'hosting','price':100,'published':True})
-    o=market.order(buyer,p.id,'one')
-    with db.sessions() as s:
-        assert s.scalar(select(Hosting)) is None
-    market.submit_payment(buyer,o.id,RECEIPT)
-    market.review_payment(admin,o.id,True)
-    with db.sessions() as s:
-        h=s.scalar(select(Hosting))
-    with pytest.raises(DomainError):
-        c.hosting(admin,h.id,'running','Pretend provisioned')
-    c.hosting(admin,h.id,'provisioning','Staff started provisioning')
-    row=c.hosting(admin,h.id,'running','Synthetic test only: resource fixture created')
-    assert row.expires_at > now()
+def test_hosting_products_no_longer_available(market, admin):
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):
+        market.save_product(admin, {'name':'Hosting removed','category':'hosting','delivery_kind':'hosting','price':100,'published':True})
+
+
+async def test_existing_ticket_repairs_overwrites(db,core,buyer):
+    from unittest.mock import AsyncMock
+    from nex.models import Ticket
+    roles={20:object(),30:object()}
+    customer,bot,default=object(),object(),object()
+    channel=SimpleNamespace(id=77,edit=AsyncMock())
+    guild=SimpleNamespace(default_role=default,me=bot,get_role=roles.get,get_channel=lambda ident:channel if ident==77 else None,text_channels=[],create_text_channel=AsyncMock())
+    tickets=Tickets(db)
+    row=tickets.reserve(buyer,'support')
+    with db.transaction() as s:
+        s.get(Ticket,row.id).channel_id=77
+    _,result=await tickets.open(buyer,guild,customer)
+    assert result==channel
+    overwrites=channel.edit.await_args.kwargs['overwrites']
+    assert overwrites[default].view_channel is False
+    assert overwrites[customer].view_channel is True
+    assert all(overwrites[role].view_channel for role in roles.values())
+    assert len(overwrites)==5
+    guild.create_text_channel.assert_not_awaited()
+
+
+def test_legacy_hosting_hidden_and_order_blocked(db,core,market,buyer):
+    from nex.models import Product
+    with db.transaction() as s:
+        p=Product(guild_id=1000,name='Legacy hosting',category='hosting',price=100,published=True,delivery_kind='hosting',delivery_value='')
+        s.add(p)
+        s.flush()
+    assert market.browse(1000)==[]
+    with pytest.raises(DomainError,match='unavailable'):
+        market.order(buyer,p.id,'legacy-order')

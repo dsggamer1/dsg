@@ -1,7 +1,7 @@
 from datetime import timedelta
 import secrets
 from sqlalchemy import select, func
-from ..models import Entitlement, Order, Review, Reward, Referral, Level, Giveaway, Entry, Hosting, now
+from ..models import Entitlement, Order, Review, Reward, Referral, Level, Giveaway, Entry, now
 from ..security import DomainError
 from .core import config, audit
 
@@ -83,20 +83,3 @@ class Community:
             if actor:
                 audit(s, actor, 'giveaway.reroll', g.id, winners=g.winners)
             return g
-
-    def hosting(self, actor, hosting_id, state, notes):
-        allowed = {'queued': {'provisioning', 'cancelled'}, 'provisioning': {'running', 'failed', 'cancelled'}, 'running': {'stopped', 'failed', 'expired', 'cancelled'}, 'stopped': {'running', 'cancelled', 'expired'}, 'failed': {'provisioning', 'cancelled'}, 'expired': set(), 'cancelled': set()}
-        with self.db.transaction() as s:
-            actor.require(config(s, actor.guild_id))
-            h = s.get(Hosting, hosting_id)
-            order = s.get(Order, h.order_id) if h else None
-            if not order or order.guild_id != actor.guild_id or order.state not in ('paid', 'delivered'):
-                raise DomainError('Hosting order not available.')
-            if state not in allowed[h.state] or not notes.strip() or len(notes) > 1000:
-                raise DomainError('Invalid hosting transition or missing provisioning notes.')
-            h.state, h.notes = state, notes
-            if state == 'running' and h.expires_at is None:
-                h.expires_at = now() + timedelta(days=order.snapshot['duration_days'])
-                order.state, order.delivered_at = 'delivered', now()
-            audit(s, actor, 'hosting.' + state, h.id, notes=notes)
-            return h

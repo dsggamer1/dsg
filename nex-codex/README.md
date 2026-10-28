@@ -1,12 +1,12 @@
 # NEX CODEX
 
-**Your community. Connected.** A modular Discord bot and companion FastAPI dashboard, with server management and a marketplace for server templates, bot source code, and manually provisioned hosting.
+**Your community. Connected.** A modular Discord bot and companion FastAPI dashboard, with server management and a marketplace for server templates and bot source code. Hosting products are not offered in this release.
 
-This is a runnable v1 foundation with implemented end-to-end services, not a hosted service. See [PROJECT_STATE.md](PROJECT_STATE.md) for the precise coverage, verified results, and remaining work. The existing portfolio website in the parent repository is preserved.
+This is a runnable v1.1 foundation with implemented end-to-end services, not a hosted service. See [PROJECT_STATE.md](PROJECT_STATE.md) for the precise coverage, verified results, and remaining work. The existing portfolio website in the parent repository is preserved.
 
 ## Quick start
 
-Requires Python **3.11+** (verified locally with 3.14.4). Run all commands from this directory.
+Requires Python **3.11+** (verified with 3.11.18 and 3.14.4). Run all commands from this directory.
 
 ```bash
 python3 -m venv .venv
@@ -53,20 +53,31 @@ The Discord bot can run without the dashboard. For the dashboard, configure `SES
 4. Configure an OAuth redirect URI that exactly matches `DISCORD_REDIRECT_URI`, initially `http://localhost:8000/auth/callback`. Set `PUBLIC_URL=http://localhost:8000` locally. The web authorization flow requests **identify** and **guilds**; it does not store OAuth access tokens after sign-in.
 5. Invite the bot with **bot** and **applications.commands** scopes. Grant only the permissions needed for enabled features: View Channels, Send Messages, Embed Links, Attach Files, Read Message History, Manage Channels (tickets), Manage Roles (safe role tools), Manage Messages (purge/automod), Kick Members, Ban Members, Moderate Members, View Audit Log (security alerts), and Send Polls. You need not grant Administrator.
 6. Place the bot role above roles and members it must manage. Discord administrators and guild owners retain their platform-level access to ticket channels.
-7. Put your own Discord user ID in `OWNER_IDS`, JSON syntax: `[123456789012345678]`. Run `!sync` as a configured bot owner to publish global slash commands. Sync is explicit; it is not repeated at every restart. Propagation can take time.
-8. Use `/help` to browse the **actual registered commands**. Text commands use `!` initially; `/prefix` changes it per guild. Complex argument workflows are easiest through slash commands.
+7. Put your own Discord user ID in `OWNER_IDS`, JSON syntax: `[123456789012345678]`. Slash commands publish automatically at startup (`SYNC_COMMANDS=true`). For immediate server-specific registration, put your server ID in `COMMAND_GUILD_IDS`, for example `[123456789012345678]`, then restart. Global propagation can take time. Owner-only `!sync` is available to retry; `SYNC_COMMANDS=false` disables automatic publication.
+8. Use `/help` to browse the **actual registered commands**. Text commands use `DEFAULT_PREFIX` (`!` initially); `/prefix` changes it per guild. Complex argument workflows are easiest through slash commands.
 
 The sign-in session is an opaque random HttpOnly cookie backed by an expiring server-side record. OAuth state is bound to a cookie, expires in ten minutes and is single-use. Sensitive forms require CSRF tokens. Protected guild requests fetch current membership, roles and ownership from Discord and fail closed if verification fails.
 
+## Commands not responding?
+
+1. Start with `python main.py` from the directory containing `.env`, `requirements.txt` and `nex/`. Read the panel console: missing token, rejected token and disabled privileged intents have explicit startup messages.
+2. Enable **Message Content Intent** and **Server Members Intent** under Developer Portal → Bot, then restart. Prefix commands require message content. Verify the bot is online and can read/send/embed in your channel.
+3. Invite the correct application with **bot** and **applications.commands** scopes. Keep `SYNC_COMMANDS=true`. Set `COMMAND_GUILD_IDS=[your_numeric_server_id]` (replace with the real number; valid JSON) to sync directly to your server on restart.
+4. Try `/ping`, `/help`, `/diagnostics`. Try `!ping` or your configured prefix for text commands. Discord server integration/channel command restrictions can also hide slash commands.
+5. Keep the bot's role above roles/members it manages; grant feature-specific permissions from the list above. `/diagnostics` checks the current channel's core permissions, not all API actions.
+6. Slash commands now acknowledge before slower ticket/file/provider operations to avoid the initial three-second interaction timeout. If an operation fails after creating an order, use `/orders` and resume that existing order.
+
+No real bot token was supplied during this audit. Local command loading, payload serialization, prefix invocation and interaction handling were tested with mocks; actual Discord and Wispbyte behavior still needs a live staging check.
+
 ## Server setup
 
-Open **My servers → Manage → Server settings**, or use `/configure key value`. Values in `/configure` must be JSON (quote strings; IDs are numbers; roles are arrays).
+Start with `/setup` for the guided command checklist and `/diagnostics` for command/prefix/channel permission checks. Open **My servers → Manage → Server settings**, or use `/configure key value`. Values in `/configure` must be JSON (quote strings; IDs are numbers; roles are arrays).
 
 Suggested order:
 
 1. `staff_roles`, `payment_roles`, `ticket_category`, `log_channel`.
 2. `welcome_channel`, `leave_channel`, `welcome_message`, `leave_message`, optional `auto_role`. Templates support `{user}`, `{name}`, `{server}`; arbitrary formatting is not executed.
-3. `self_roles` for `/roles`, and optional `leveling_enabled`, `xp_cooldown`, `level_channel`, `level_rewards` (for example `{"5": 123456789012345678}`). Only nonprivileged, unmanaged roles below the bot can be assigned.
+3. `self_roles` for `/roles`, and optional `leveling_enabled`, `xp_cooldown`, `level_channel`, `level_rewards` (for example `{"5": 123456789012345678}`). Only nonprivileged, unmanaged roles below the bot can be assigned. NEX CODEX staff/payment-review roles cannot be self-assigned, used for auto-role, or given as XP rewards.
 4. Enable `automod_enabled` after reviewing thresholds/exemptions. Default action is **log**. Optional **delete** never automatically bans or times out. Rules cover bursts, repeated text, mention spam, invites, capitals, and explicitly configured blocked domains. Caps and spam signals are not proof of malicious intent.
 5. Enable `security_enabled` and configure `security_threshold`, `security_window`, `security_exempt_users`. Supported audit actions: channel/role deletion, bans, kicks and webhook creation. Detection requires the necessary Discord events and View Audit Log permission. Responses currently persist incidents and alert staff. No automatic restoration, quarantine or permission stripping is implemented.
 
@@ -80,19 +91,25 @@ The dashboard JSON configuration editor exposes all fields with server-side vali
 
 Set actual values for `upi_id`, `qr_url` (public HTTPS image URL), `payee`, `payment_instructions`, `currency` and `payment_roles`. No real payment details ship with this project. The payment currency must match the product currency. UPI is ordinarily used with INR; configure currency consistently with what your receiving account actually supports.
 
-Staff create/edit/publish/unpublish/archive products in **Products**. Monetary values are integers in minor units: `49900` means `499.00`. Categories are `template`, `source`, `hosting`. Include terms before publication. Hosting requires `delivery_kind=hosting`; its duration and capacity are snapshotted into the order.
+Staff create/edit/publish/unpublish/archive products in dashboard **Products**, or directly in Discord:
+
+- `/productadd`: choose `template` or `source`, a name, price, delivery instructions or HTTPS download link, and description. It creates a draft.
+- `/productedit`: change terms, thumbnail, availability, delivery content and other validated fields. Use `delivery_kind=file` plus a relative `delivery_value` for private files. Set `archived=true` to archive.
+- `/productpublish`: publish or unpublish the reviewed draft.
+
+**Price input:** Discord `/productadd` and `/productedit price` use currency units (`499.00`). Dashboard forms use integer minor units (`49900` means `499.00`). Stored prices are always integer minor units. Other `/productedit` values accept JSON (`true`, `false`, arrays, quoted strings) or plain text. Set product terms before opening sales.
 
 ### Purchase flow
 
-1. Customer uses `/shop`, `/product` and `/buy` in the relevant guild.
+1. Customer opens `/shop`, selects a product, reviews the branded product card and presses **Confirm purchase**. The storefront has page buttons, search/category arguments and controls bound to the initiating customer. `/product` and `/buy` remain available.
 2. `/buy` asks for confirmation of product, amount and terms. The service checks those terms again inside the order transaction. The order gets a UUID, immutable price/currency/delivery snapshots and `pending_payment` status.
 3. A private purchase channel is created for the customer, bot, staff roles and reviewer roles. The channel displays order ID, exact amount, QR and UPI instructions.
 4. Customer pays independently, then uses `/payment` **inside that open ticket**, attaching a PNG/JPEG/WebP screenshot up to 8 MB and optional reference. The bot stores the Discord attachment URL; it does not OCR or automatically trust it. Attachment URLs can expire; staff should review promptly and consult the original ticket if needed.
 5. Reviewers independently verify the receiving account, amount and reference. `/paymentreview` or the dashboard payment queue records an explicit decision, reviewer, timestamp and reason. Rejection requires a reason and allows resubmission. **Reviewers cannot approve/reject their own order**, including administrators and owners. Configured ordinary staff roles do not implicitly grant payment-review access.
-6. Approval atomically records `paid`, entitlement and any hosting handoff. Concurrent/duplicate approvals produce one entitlement.
-7. Customer uses `/deliver` (private DM) or **My orders → Access product**. A failed Discord send does not mark delivery successful. Hosting becomes delivered only when staff record an actual running provisioning result.
+6. Approval atomically records `paid` and an entitlement. Concurrent/duplicate approvals produce one entitlement.
+7. Customer uses `/deliver` (private DM) or **My orders → Access product**. A failed Discord send does not mark delivery successful.
 
-Order states implemented: `pending_payment`, `payment_submitted`, `paid`, `rejected`, `delivered`, `cancelled`, `manually_refunded`. The service also accepts `verification_required` for review compatibility, but there is no command that places an order into that intermediate state. `/orderstate` records unpaid cancellation or an already-completed external manual refund. It never transfers money. Refund recording revokes download entitlement but cannot recall an already downloaded file or automatically stop externally hosted resources.
+Order states implemented: `pending_payment`, `payment_submitted`, `paid`, `rejected`, `delivered`, `cancelled`, `manually_refunded`. The service also accepts `verification_required` for review compatibility, but there is no command that places an order into that intermediate state. `/orderstate` records unpaid cancellation or an already-completed external manual refund. It never transfers money. Refund recording revokes download entitlement but cannot recall an already downloaded file.
 
 If a ticket fails after order creation, the order remains recorded. Retry with `/ticket order_id:<ID>`; do not pay a new order. Ticket reservations and channel topics allow recovery after a crash. If a channel was deleted or a ticket was closed, staff must resolve it. A customer may have one active ticket per category; close an earlier purchase ticket before opening a second one.
 
@@ -109,7 +126,6 @@ Place `.zip`, `.json`, `.txt`, `.pdf`, `.tar` or `.gz` files beneath `PRODUCT_RO
 - `file`: protected dashboard attachment or Discord DM. Keep file sizes within your guild/Discord upload limits; larger files can be downloaded through the dashboard.
 - `link`: HTTPS URL disclosed only after entitlement verification. This protects disclosure, not the remote file itself: recipients can copy the URL. Configure expiring provider links yourself or use private files when each download must be authorized.
 - `instructions`: private textual delivery instructions.
-- `hosting`: verified order enters a manual provisioning queue.
 
 A successful server response means the server transmitted the file or instructions; it cannot prove the recipient saved them. Re-downloads are intentionally allowed while entitlement is active. The initial delivery transition and timestamp are idempotent. The bot and database do not form a distributed transaction; a crash after sending but before committing can result in a retry sending the same product again.
 
@@ -120,12 +136,11 @@ Run `/help` for the live list. Permission failures explain the action and do not
 | Area | Commands / interface |
 |---|---|
 | Moderation | `/ban`, `/unban`, `/kick`, `/timeout`, `/untimeout`, `/warn`, `/history`, `/purge` |
-| Server tools | `/ping`, `/about`, `/serverinfo`, `/userinfo`, `/avatar`, `/roleinfo`, `/channelinfo`, `/prefix`, `/configure` |
+| Server tools | `/setup`, `/diagnostics`, `/ping`, `/about`, `/serverinfo`, `/userinfo`, `/avatar`, `/roleinfo`, `/channelinfo`, `/prefix`, `/configure` |
 | Roles & community | `/role`, `/roles`, `/poll`, `/leaderboard`, `/roll`, `/remind` |
-| Marketplace | `/shop`, `/product`, `/buy`, `/orders`, `/deliver`; dashboard product CRUD |
+| Marketplace | `/shop`, `/product`, `/buy`, `/orders`, `/deliver`, `/productadd`, `/productedit`, `/productpublish`; dashboard product CRUD |
 | Tickets | `/ticket`, `/ticketmanage` (claim/unclaim/close/reopen), `/transcript` (last 500 messages to staff DM) |
 | Payments | `/payment`, `/paymentreview`, `/orderstate`; dashboard review queue |
-| Hosting | `/hosting`; dashboard manual provisioning queue |
 | Premium | `/premium` grant/revoke/extend/inspect; dashboard entitlement management |
 | Reviews & referrals | `/review`, `/reviewmoderate`, `/referral`, `/rewards` |
 | Giveaways | `/giveaway`, persistent entry button, `/reroll` |
@@ -137,9 +152,7 @@ Ban, kick, purge, purchases and paid approvals require confirmation. Moderation 
 
 Giveaway entries and random results persist; the worker draws overdue giveaways after restart. It retries unannounced results. Reminders also recover after restart. Delivery/announcement retries are at least once; an abrupt crash between Discord success and database commit may duplicate a notification. Reminders with closed DMs stay pending and retry; users should allow DMs. One bot instance avoids competing workers.
 
-## Hosting and premium
-
-`HostingProvider` defines future `provision`/`stop` adapters. `ManualHosting` explicitly reports that staff action is required; it does not invent resource IDs. The queue enforces transitions: queued → provisioning → running/failed; running ↔ stopped; cancellation/expiry where appropriate. Recording running requires staff notes, sets expiration from purchased duration, and records delivery. Expiration records status only: staff must stop the real service separately. Renewal billing and provider automation are unfinished.
+## Premium and rewards
 
 Premium supports named grants, temporary/lifetime entitlement, extension, revocation and server-side `Core.has_premium`. No paid feature is advertised or gated in v1; a premium plan catalogue, pricing and additional premium-only features are unfinished. Grants are unique per guild/customer.
 
@@ -184,7 +197,7 @@ python -m pip check
 
 Tests use isolated SQLite databases and synthetic data. They verify database persistence, permissions and hierarchy, invalid products/URLs, order price snapshots, approval authorization, concurrent duplicate approval and free claims, payment rejection/resubmission, delivery access, refund revocation, ticket overwrites, premium expiration/lifetime, referrals/reward uniqueness, reviews, cooldowns, giveaway recovery, XP cooldowns, OAuth state/sessions/CSRF, dashboard access, API redaction and offline slash-command serialization.
 
-These tests **do not connect to live Discord**. Real OAuth consent, gateway intents, Discord moderation/tickets/file sends, and hosted AI/hosting provider behavior require separate staging verification with credentials and a test server. The available CodeRabbit Emulate v0.0.1 catalog was inspected; it does not include Discord or this AI adapter's chat-completions API.
+These tests **do not connect to live Discord**. Real OAuth consent, gateway intents, Discord moderation/tickets/file sends, and hosted AI provider behavior require separate staging verification with credentials and a test server. The available CodeRabbit Emulate v0.0.1 catalog was inspected; it does not include Discord or this AI adapter's chat-completions API.
 
 A disposable PostgreSQL 17 smoke was also executed locally for schema creation, configuration, paid order creation, four concurrent approvals (one success), entitlement and delivery. To repeat against your **dedicated test database named `nex_test`**:
 

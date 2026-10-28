@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 from pathlib import Path
 import json
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Query
 from fastapi.responses import RedirectResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -35,7 +35,7 @@ def create_app(cfg=None, database=None):
         if database is None:
             db.engine.dispose()
 
-    app = FastAPI(title='NEX CODEX', version='1.0.0', lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title='NEX CODEX', version='1.1.0', lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.config, app.state.db = cfg, db
     app.state.core, app.state.market, app.state.community = Core(db), Marketplace(db, cfg.product_root), Community(db)
     app.state.limiter = RateLimiter()
@@ -75,7 +75,7 @@ def create_app(cfg=None, database=None):
             s.execute(text('SELECT 1'))
             bot = s.get(Heartbeat, 'bot')
             online = bool(bot and bot.updated_at > now()-timedelta(seconds=90))
-        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.0.0'}
+        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.1.0'}
 
     @app.get('/auth/login')
     async def login(request: Request):
@@ -121,14 +121,14 @@ def create_app(cfg=None, database=None):
         return render(request, 'servers.html', guilds=user.guilds, active='servers')
 
     @app.get('/marketplace')
-    def marketplace(request: Request, category: str = '', q: str = '', page: int = 1):
+    def marketplace(request: Request, category: str = '', q: str = '', page: int = Query(1, ge=1, le=10000)):
         return render(request, 'marketplace.html', products=app.state.market.browse(category=category or None, query=q, page=page), category=category, query=q, page=max(1,page), active='marketplace')
 
     @app.get('/marketplace/{product_id}')
     def product(request: Request, product_id: str):
         with db.sessions() as s:
             p = s.get(Product, product_id)
-            if not p or not p.published or p.archived:
+            if not p or p.category not in ('template', 'source') or not p.published or p.archived:
                 raise HTTPException(404, 'Product not found.')
             reviews = list(s.scalars(select(Review).where(Review.product_id == p.id, Review.hidden.is_(False)).order_by(Review.id.desc()).limit(10)))
             average = s.scalar(select(func.avg(Review.rating)).where(Review.product_id == p.id, Review.hidden.is_(False)))
@@ -166,7 +166,7 @@ def create_app(cfg=None, database=None):
         return RedirectResponse(f'/guild/{guild_id}/settings?saved=1', status_code=303)
 
     @app.get('/guild/{guild_id}/products')
-    async def manage_products(request: Request, guild_id: int, page: int = 1):
+    async def manage_products(request: Request, guild_id: int, page: int = Query(1, ge=1, le=10000)):
         a = await guild_actor(request, guild_id)
         a.require(app.state.core.config(guild_id))
         return render(request, 'manage_products.html', guild_id=guild_id, products=app.state.market.browse(guild_id= guild_id, page=page, staff=True), active='products', page=max(1,page))
@@ -196,7 +196,7 @@ def create_app(cfg=None, database=None):
         return RedirectResponse(f'/guild/{guild_id}/products', status_code=303)
 
     @app.get('/guild/{guild_id}/orders')
-    async def my_orders(request: Request, guild_id: int, page: int = 1):
+    async def my_orders(request: Request, guild_id: int, page: int = Query(1, ge=1, le=10000)):
         a = await guild_actor(request, guild_id)
         with db.sessions() as s:
             orders = list(s.scalars(select(Order).where(Order.guild_id == guild_id, Order.user_id == a.user_id).order_by(Order.created_at.desc()).offset((max(1,page)-1)*20).limit(20)))
@@ -209,8 +209,6 @@ def create_app(cfg=None, database=None):
         result = app.state.market.delivery(a, order_id)
         if result['delivery_kind'] == 'file':
             return FileResponse(result['path'], filename=result['path'].name, media_type='application/octet-stream', background=BackgroundTask(app.state.market.delivered, a, order_id))
-        if result['delivery_kind'] == 'hosting':
-            return render(request, 'delivery.html', guild_id=guild_id, delivery=result, active='orders')
         response = render(request, 'delivery.html', guild_id=guild_id, delivery=result, active='orders')
         response.background = BackgroundTask(app.state.market.delivered, a, order_id)
         return response
@@ -236,22 +234,6 @@ def create_app(cfg=None, database=None):
             raise DomainError('Independently verify the transaction before approving.')
         app.state.market.review_payment(a, order_id, approve, str(form.get('reason', '')))
         return RedirectResponse(f'/guild/{guild_id}/payments', status_code=303)
-
-    @app.get('/guild/{guild_id}/hosting')
-    async def hosting(request: Request, guild_id: int):
-        a = await guild_actor(request, guild_id)
-        a.require(app.state.core.config(guild_id))
-        with db.sessions() as s:
-            rows = s.execute(select(Hosting, Order).join(Order, Order.id == Hosting.order_id).where(Order.guild_id == guild_id).order_by(Order.created_at.desc()).limit(50)).all()
-        return render(request, 'hosting.html', guild_id=guild_id, rows=rows, active='hosting')
-
-    @app.post('/guild/{guild_id}/hosting/{hosting_id}')
-    async def update_hosting(request: Request, guild_id: int, hosting_id: str):
-        form = await request.form()
-        csrf(request, form, require_session(request))
-        a = await guild_actor(request, guild_id)
-        app.state.community.hosting(a, hosting_id, str(form.get('state','')), str(form.get('notes','')))
-        return RedirectResponse(f'/guild/{guild_id}/hosting', status_code=303)
 
     @app.get('/guild/{guild_id}/premium')
     async def premium(request: Request, guild_id: int):
@@ -279,12 +261,12 @@ def create_app(cfg=None, database=None):
         return RedirectResponse(f'/guild/{guild_id}/premium', status_code=303)
 
     @app.get('/api/products')
-    def public_products(category: str = '', q: str = '', page: int = 1):
+    def public_products(category: str = '', q: str = '', page: int = Query(1, ge=1, le=10000)):
         products = app.state.market.browse(category=category or None, query=q, page=page)
-        return {'page': max(1, page), 'products': [{key: getattr(p, key) for key in ('id','guild_id','name','description','category','price','currency','thumbnail','terms','available','duration_days','capacity')} for p in products]}
+        return {'page': max(1, page), 'products': [{key: getattr(p, key) for key in ('id','guild_id','name','description','category','price','currency','thumbnail','terms','available')} for p in products]}
 
     @app.get('/api/guild/{guild_id}/orders')
-    async def api_orders(request: Request, guild_id: int, page: int = 1):
+    async def api_orders(request: Request, guild_id: int, page: int = Query(1, ge=1, le=10000)):
         a = await guild_actor(request, guild_id)
         with db.sessions() as s:
             rows = list(s.scalars(select(Order).where(Order.guild_id == guild_id, Order.user_id == a.user_id).order_by(Order.created_at.desc()).offset((max(1,page)-1)*20).limit(20)))

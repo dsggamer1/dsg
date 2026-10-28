@@ -28,7 +28,10 @@ class Automod:
         if len(letters) >= 20 and sum(c.isupper() for c in letters)/len(letters)*100 >= cfg['caps_percent']:
             flags.append('excessive capitals')
         for raw in re.findall(r'https?://[^\s<>]+', content):
-            host = (urlparse(raw).hostname or '').lower()
+            try:
+                host = (urlparse(raw).hostname or '').lower()
+            except ValueError:
+                continue  # Malformed user text must not break the event listener.
             if any(host == domain or host.endswith('.'+domain) for domain in cfg['blocked_domains']):
                 flags.append('blocked domain')
                 break

@@ -25,7 +25,7 @@ class Tickets:
         self.db = db
 
     def reserve(self, actor, category, order_id=None):
-        if category not in ('support', 'purchase', 'hosting', 'appeal'):
+        if category not in ('support', 'purchase', 'appeal'):
             raise DomainError('Invalid ticket category.')
         with self.db.transaction() as s:
             cfg = config(s, actor.guild_id)
@@ -54,20 +54,20 @@ class Tickets:
         row = self.reserve(actor, category, order_id)
         if row.state == 'closed':
             raise DomainError('This ticket is closed. Ask staff to reopen it.')
-        if row.channel_id:
-            channel = guild.get_channel(row.channel_id)
-            if channel:
-                return row, channel
-            raise DomainError('Ticket channel is missing. Ask staff to repair or close the ticket.')
         with self.db.sessions() as s:
             cfg = config(s, actor.guild_id)
         roles = [guild.get_role(r) for r in set(cfg['staff_roles'] + cfg['payment_roles'])]
         if any(role is None for role in roles):
             raise DomainError('A configured ticket role no longer exists.')
         # Recover a channel created before a process crash, identified by its immutable ticket ID.
-        channel = next((c for c in guild.text_channels if c.topic == f'NEX ticket {row.id}'), None)
+        channel = guild.get_channel(row.channel_id) if row.channel_id else next((c for c in guild.text_channels if c.topic == f'NEX ticket {row.id}'), None)
+        if row.channel_id and channel is None:
+            raise DomainError('Ticket channel is missing. Ask staff to repair or close the ticket.')
+        overwrites = ticket_overwrites(guild, customer, guild.me, roles)
+        if channel is not None:
+            await channel.edit(overwrites=overwrites, reason='Restore NEX private ticket permissions')
         if channel is None:
-            channel = await guild.create_text_channel(f'ticket-{row.id[:8]}', category=guild.get_channel(cfg['ticket_category']), topic=f'NEX ticket {row.id}', overwrites=ticket_overwrites(guild, customer, guild.me, roles), reason='NEX CODEX private ticket')
+            channel = await guild.create_text_channel(f'ticket-{row.id[:8]}', category=guild.get_channel(cfg['ticket_category']), topic=f'NEX ticket {row.id}', overwrites=overwrites, reason='NEX CODEX private ticket')
         with self.db.transaction() as s:
             current = s.get(Ticket, row.id)
             current.channel_id, current.state = channel.id, 'open'

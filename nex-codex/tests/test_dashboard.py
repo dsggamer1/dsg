@@ -40,7 +40,7 @@ def test_public_pages_and_real_empty_states(web):
     assert 'Good things are on the way' in c.get('/marketplace').text
 
 
-@pytest.mark.parametrize('url',['/servers','/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/orders','/guild/1000/payments','/guild/1000/premium','/guild/1000/hosting','/guild/1000/download/unknown'])
+@pytest.mark.parametrize('url',['/servers','/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/orders','/guild/1000/payments','/guild/1000/premium','/guild/1000/download/unknown'])
 def test_protected_pages_require_login(web,url):
     assert web[1].get(url).status_code==401
 
@@ -66,7 +66,7 @@ def test_staff_pages_and_writes_with_mocked_live_membership(web,db,core,monkeypa
     login(app,c,db,100)
     module=importlib.import_module('nex.dashboard.app')
     monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=Actor(100,1000,administrator=True)))
-    for url in ('/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/products/edit','/guild/1000/orders','/guild/1000/payments','/guild/1000/hosting','/guild/1000/premium'):
+    for url in ('/guild/1000','/guild/1000/settings','/guild/1000/products','/guild/1000/products/edit','/guild/1000/orders','/guild/1000/payments','/guild/1000/premium'):
         r=c.get(url)
         assert r.status_code==200, (url,r.text)
     assert c.post('/guild/1000/settings',data={'csrf':'synthetic-csrf','configuration':'{"prefix":"?"}'}).status_code==200
@@ -81,7 +81,7 @@ def test_regular_member_cannot_manage(web,db,core,monkeypatch):
     login(app,c,db)
     module=importlib.import_module('nex.dashboard.app')
     monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=Actor(200,1000)))
-    for path in ('settings','products','payments','hosting','premium'):
+    for path in ('settings','products','payments','premium'):
         assert c.get('/guild/1000/'+path).status_code==400
     assert c.post('/guild/1000/settings',data={'csrf':'synthetic-csrf','configuration':'{"staff_roles":[55]}'}).status_code==400
     assert core.config(1000)['staff_roles']==[20]
@@ -157,3 +157,40 @@ def test_request_body_bound_and_public_api_redaction(web,market,admin):
     assert 'SECRET_DELIVERY' not in str(payload)
     assert c.get('/api/guild/1000/orders').status_code==401
     assert c.get('/api/guild/1000/settings').status_code==401
+
+
+def test_hosting_removed_and_pagination_bounded(web):
+    app,c=web
+    for path in ('/hosting','/guild/1000/hosting'):
+        assert c.get(path).status_code==404
+    assert c.post('/guild/1000/hosting/unknown',data={}).status_code==404
+    for path in ('/marketplace','/api/products'):
+        assert c.get(path+'?page=9999999999999999999999999').status_code==422
+    assert '>Hosting<' not in c.get('/').text
+
+
+def test_protected_file_delivery_and_refund(web,db,market,admin,buyer,tmp_path,monkeypatch):
+    from nex.models import Order
+    app,c=web
+    (tmp_path/'product.zip').write_bytes(b'synthetic source archive')
+    p=market.save_product(admin,{'name':'Private source','category':'source','published':True,'delivery_kind':'file','delivery_value':'product.zip'})
+    order=market.order(buyer,p.id,'file-test')
+    login(app,c,db)
+    module=importlib.import_module('nex.dashboard.app')
+    monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=Actor(999,1000)))
+    assert c.get(f'/guild/1000/download/{order.id}').status_code==400
+    monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=buyer))
+    response=c.get(f'/guild/1000/download/{order.id}')
+    assert response.status_code==200 and response.content==b'synthetic source archive'
+    with db.sessions() as s:
+        assert s.get(Order,order.id).state=='delivered'
+    # Missing files never become successful deliveries.
+    (tmp_path/'product.zip').unlink()
+    assert c.get(f'/guild/1000/download/{order.id}').status_code==400
+    # Paid refunds revoke future access even if the file is restored.
+    paid=market.save_product(admin,{'name':'Paid archive','category':'source','price':100,'published':True,'delivery_value':'private instructions'})
+    paid_order=market.order(buyer,paid.id,'paid-file-test')
+    market.submit_payment(buyer,paid_order.id,'https://cdn.discordapp.com/attachments/synthetic.png')
+    market.review_payment(admin,paid_order.id,True)
+    market.change_order(admin,paid_order.id,'manually_refunded','External refund checked')
+    assert c.get(f'/guild/1000/download/{paid_order.id}').status_code==400

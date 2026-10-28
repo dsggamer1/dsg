@@ -12,6 +12,8 @@ from .services.tickets import Tickets
 from .services.community import Community
 from .security import DomainError, RateLimiter
 from .utils.discord import embed
+from .models import Guild
+
 
 
 class JsonFormatter(logging.Formatter):
@@ -21,7 +23,12 @@ class JsonFormatter(logging.Formatter):
 
 
 async def prefix(bot, message):
-    value = bot.core.config(message.guild.id)['prefix'] if message.guild else bot.config.default_prefix
+    value = bot.config.default_prefix
+    if message.guild:
+        with bot.db.sessions() as session:
+            row = session.get(Guild, message.guild.id)
+            if row and 'prefix' in row.settings:
+                value = row.settings['prefix']
     return commands.when_mentioned_or(value)(bot, message)
 
 
@@ -38,19 +45,38 @@ class NexBot(commands.Bot):
         intents = discord.Intents.default()
         intents.members = intents.message_content = intents.moderation = True
         super().__init__(command_prefix=prefix, intents=intents, help_command=None, allowed_mentions=discord.AllowedMentions.none(), owner_ids=set(self.config.owner_ids))
+        self.before_invoke(self.prepare_command)
 
     async def setup_hook(self):
         self.db.initialize()
         for extension in ('utility', 'moderation', 'commerce', 'community', 'events'):
             await self.load_extension('nex.cogs.' + extension)
-        # Global sync is explicit via owner-only !sync to avoid startup rate-limit churn.
+        if self.config.sync_commands:
+            await self.publish_commands()
+
+    async def publish_commands(self):
+        registered = await self.tree.sync()
+        for guild_id in self.config.command_guild_ids:
+            guild = discord.Object(id=guild_id)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+        logging.getLogger('nex').info('commands.synced count=%s', len(registered))
+        return registered
+
+    async def prepare_command(self, ctx):
+        # Discord needs an acknowledgment before slow network/file operations finish.
+        if ctx.interaction and not ctx.interaction.response.is_done():
+            public = {'shop', 'product', 'avatar', 'serverinfo', 'poll', 'giveaway', 'leaderboard', 'roll'}
+            await ctx.defer(ephemeral=ctx.command.name not in public)
+
 
     async def on_ready(self):
         logging.getLogger('nex').info('bot.ready')
-        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name='your community • /help'))
+        await self.change_presence(activity=discord.Activity(type=discord.ActivityType.watching, name='your community • /help • /shop'))
 
     async def on_command_error(self, ctx, error):
-        error = getattr(error, 'original', error)
+        while getattr(error, 'original', None) is not None:
+            error = error.original
         if isinstance(error, commands.CommandNotFound):
             return
         if isinstance(error, (DomainError, commands.UserInputError, commands.CheckFailure, commands.CommandOnCooldown)):
@@ -74,8 +100,15 @@ async def main():
     cfg = settings()
     if not cfg.discord_token:
         raise SystemExit('Set DISCORD_TOKEN in .env before starting the bot.')
-    async with NexBot(cfg) as bot:
-        await bot.start(cfg.discord_token)
+    try:
+        async with NexBot(cfg) as bot:
+            await bot.start(cfg.discord_token)
+    except discord.PrivilegedIntentsRequired:
+        raise SystemExit('Enable Server Members Intent and Message Content Intent in Discord Developer Portal > Bot, then restart.') from None
+    except discord.LoginFailure:
+        raise SystemExit('Discord rejected DISCORD_TOKEN. Copy the current bot token from Developer Portal > Bot into .env.') from None
+    except discord.HTTPException:
+        raise SystemExit('Discord connection or command registration failed. Check the bot invite includes applications.commands and retry.') from None
 
 
 if __name__ == '__main__':

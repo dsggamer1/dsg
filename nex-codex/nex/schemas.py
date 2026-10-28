@@ -7,7 +7,7 @@ class ProductInput(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     name: str = Field(min_length=2, max_length=120)
     description: str = Field(default='', max_length=4000)
-    category: Literal['template', 'source', 'hosting']
+    category: Literal['template', 'source']
     price: int = Field(default=0, ge=0, le=100000000)
     currency: str = Field(default='INR', pattern=r'^[A-Z]{3}$')
     thumbnail: str = Field(default='', max_length=2000)
@@ -15,21 +15,15 @@ class ProductInput(BaseModel):
     published: bool = False
     archived: bool = False
     available: bool = True
-    delivery_kind: Literal['instructions', 'link', 'file', 'hosting'] = 'instructions'
+    delivery_kind: Literal['instructions', 'link', 'file'] = 'instructions'
     delivery_value: str = Field(default='', max_length=4000)
     claim_limit: int = Field(default=10, ge=1, le=1000)
     cooldown_seconds: int = Field(default=86400, ge=0, le=31536000)
-    duration_days: int = Field(default=30, ge=1, le=3650)
-    capacity: str = Field(default='', max_length=200)
 
     @model_validator(mode='after')
     def delivery(self):
         if self.thumbnail:
             safe_https(self.thumbnail)
-        if self.category == 'hosting' and self.delivery_kind != 'hosting':
-            raise ValueError('Hosting products require hosting delivery.')
-        if self.category != 'hosting' and self.delivery_kind == 'hosting':
-            raise ValueError('Hosting delivery requires a hosting product.')
         if self.delivery_kind == 'link':
             safe_https(self.delivery_value)
         if self.delivery_kind == 'file':
@@ -37,7 +31,7 @@ class ProductInput(BaseModel):
             p = PurePosixPath(self.delivery_value)
             if p.is_absolute() or '..' in p.parts or '\\' in self.delivery_value or not self.delivery_value:
                 raise ValueError('Use a relative product filename without traversal.')
-        if self.published and self.delivery_kind != 'hosting' and not self.delivery_value:
+        if self.published and not self.delivery_value:
             raise ValueError('Published products require delivery content.')
         return self
 

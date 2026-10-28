@@ -27,8 +27,10 @@ class Marketplace:
             return product
 
     def browse(self, guild_id=None, category=None, query='', page=1, staff=False):
+        if not 1 <= page <= 10000:
+            raise DomainError('Choose a page from 1 to 10000.')
         with self.db.sessions() as s:
-            statement = select(Product)
+            statement = select(Product).where(Product.category.in_(['template', 'source']))
             if not staff:
                 statement = statement.where(Product.published.is_(True), Product.archived.is_(False))
             if guild_id is not None:
@@ -49,7 +51,7 @@ class Marketplace:
                     raise DomainError('Request identifier already used.')
                 return existing
             p = s.get(Product, product_id)
-            if not p or p.guild_id != actor.guild_id or not p.published or p.archived or not p.available:
+            if not p or p.category not in ('template', 'source') or p.guild_id != actor.guild_id or not p.published or p.archived or not p.available:
                 raise DomainError('This product is unavailable.')
             if expected_terms is not None and (p.price, p.currency, p.terms, p.name) != expected_terms:
                 raise DomainError('Product terms changed. Please confirm the updated product.')
@@ -73,7 +75,7 @@ class Marketplace:
                     raise DomainError('Free claim limit reached. Contact staff for review.')
                 if claims and claims[0].created_at + timedelta(seconds=max(cfg['free_claim_cooldown'], p.cooldown_seconds)) > now():
                     raise DomainError('Please wait until your free claim cooldown ends.')
-            order = Order(guild_id=actor.guild_id, user_id=actor.user_id, product_id=p.id, amount=p.price, currency=p.currency, request_key=request_key, state='paid' if p.price == 0 else 'pending_payment', snapshot={key: getattr(p, key) for key in ('name', 'terms', 'delivery_kind', 'delivery_value', 'duration_days', 'capacity')})
+            order = Order(guild_id=actor.guild_id, user_id=actor.user_id, product_id=p.id, amount=p.price, currency=p.currency, request_key=request_key, state='paid' if p.price == 0 else 'pending_payment', snapshot={key: getattr(p, key) for key in ('name', 'terms', 'delivery_kind', 'delivery_value')})
             s.add(order)
             s.flush()
             if not p.price:
@@ -84,8 +86,6 @@ class Marketplace:
     @staticmethod
     def _entitle(s, order):
         s.add(Entitlement(guild_id=order.guild_id, user_id=order.user_id, product_id=order.product_id, order_id=order.id))
-        if order.snapshot['delivery_kind'] == 'hosting':
-            s.add(Hosting(order_id=order.id))
 
     @staticmethod
     def scoped_order(s, actor, order_id, staff=False):
@@ -119,6 +119,8 @@ class Marketplace:
             order = s.get(Order, order_id)
             if not order or order.guild_id != actor.guild_id:
                 raise DomainError('Order not found.')
+            if approve and order.snapshot.get('delivery_kind') == 'hosting':
+                raise DomainError('Hosting is no longer offered. Resolve this historical order with staff.')
             if order.user_id == actor.user_id:
                 raise DomainError('You cannot review your own payment.')
             if order.state not in ('payment_submitted', 'verification_required'):
@@ -161,6 +163,8 @@ class Marketplace:
             if order.state not in ('paid', 'delivered') or not entitlement:
                 raise DomainError('Delivery requires verified payment and an active entitlement.')
             result = dict(order.snapshot)
+            if result['delivery_kind'] == 'hosting':
+                raise DomainError('Hosting is no longer offered. Contact staff about this historical order.')
             if result['delivery_kind'] == 'file':
                 result['path'] = product_path(self.product_root, result['delivery_value'])
             return result

@@ -4,26 +4,23 @@ import json
 import discord
 from discord.ext import commands
 from sqlalchemy import select, func
-from ..models import Order, Ticket, Payment, Hosting, Review, Audit, Premium, Reward, Entitlement
+from ..models import Order, Ticket, Payment, Review, Audit, Premium, Reward, Entitlement
 from ..security import DomainError
-from ..utils.discord import actor, respond, embed, confirm
+from ..utils.discord import actor, respond, embed, confirm, price_minor
 from ..services.core import audit
+from ..schemas import ProductInput
+from ..utils.storefront import ShopView, CheckoutView, product_embed
 
 
 class Commerce(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @commands.hybrid_command(help='Browse templates, source code and hosting. Filter with category or search.')
+    @commands.hybrid_command(help='Browse templates and bot source code. Filter with category or search.')
     @commands.guild_only()
     async def shop(self, ctx, category: str = '', search: str = '', page: int = 1):
-        products = self.bot.market.browse(ctx.guild.id, category or None, search, page)
-        item = embed('NEX marketplace', f'Page {max(1, page)} • Use /buy with a product ID.\n{self.bot.config.public_url}/marketplace')
-        for p in products:
-            item.add_field(name=f'{p.name} • {p.currency} {p.price/100:.2f}' if p.price else f'{p.name} • Free', value=f'{p.description[:150]}\n`{p.id}`', inline=False)
-        if not products:
-            item.description = 'No products found. Staff can add products from the dashboard.'
-        await ctx.send(embed=item)
+        view = ShopView(ctx.author.id, self.bot, ctx.guild.id, category, search, page)
+        await ctx.send(embed=view.card(), view=view)
 
     @commands.hybrid_command(help='Inspect product terms, details and rating.')
     @commands.guild_only()
@@ -31,16 +28,60 @@ class Commerce(commands.Cog):
         from ..models import Product
         with self.bot.db.sessions() as s:
             p = s.get(Product, product_id)
-            if not p or p.guild_id != ctx.guild.id or not p.published or p.archived:
+            if not p or p.category not in ('template', 'source') or p.guild_id != ctx.guild.id or not p.published or p.archived:
                 raise DomainError('Product not found.')
             rating = s.scalar(select(func.avg(Review.rating)).where(Review.product_id == p.id, Review.hidden.is_(False)))
-        item = embed(p.name, p.description)
-        item.add_field(name='Price', value=f'{p.currency} {p.price/100:.2f}' if p.price else 'Free')
-        item.add_field(name='Rating', value=f'{rating:.1f}/5' if rating else 'No reviews yet')
-        item.add_field(name='Terms', value=p.terms[:1024] or 'No additional terms.', inline=False)
-        if p.thumbnail:
-            item.set_thumbnail(url=p.thumbnail)
-        await ctx.send(embed=item)
+        item = product_embed(p)
+        item.add_field(name='Customer rating', value=f'{rating:.1f}/5' if rating else 'Be the first to leave a review.')
+        await ctx.send(embed=item, view=CheckoutView(ctx.author.id, p))
+
+    @commands.hybrid_command(help='Create a draft server template or bot source product (staff). Price example: 499.00.')
+    @commands.guild_only()
+    async def productadd(self, ctx, name: str, category: str, price: str, delivery: str, description: str = ''):
+        a = actor(ctx)
+        cfg = self.bot.core.config(ctx.guild.id)
+        a.require(cfg)
+        kind = 'link' if delivery.startswith('https://') else 'instructions'
+        p = self.bot.market.save_product(a, {'name': name, 'category': category, 'price': price_minor(price), 'currency': cfg['currency'], 'delivery_kind': kind, 'delivery_value': delivery, 'description': description})
+        await respond(ctx, 'Product draft created', f'**{p.name}** · {p.currency} {p.price/100:,.2f}\nProduct ID: `{p.id}`\nSet terms with `/productedit`, then use `/productpublish {p.id} true` to open sales.')
+
+    @commands.hybrid_command(help='Edit a product field (staff). Price uses currency units; other values use JSON.')
+    @commands.guild_only()
+    async def productedit(self, ctx, product_id: str, field: str, *, value: str):
+        from ..models import Product
+        a = actor(ctx)
+        a.require(self.bot.core.config(ctx.guild.id))
+        if field not in ProductInput.model_fields:
+            raise DomainError('Unknown product field. Use name, description, price, terms, thumbnail, delivery_kind, delivery_value, published, archived or available.')
+        with self.bot.db.sessions() as session:
+            product = session.get(Product, product_id)
+            if not product or product.guild_id != ctx.guild.id or product.category not in ('template', 'source'):
+                raise DomainError('Product not found.')
+            data = {key: getattr(product, key) for key in ProductInput.model_fields}
+        if field == 'price':
+            data[field] = price_minor(value)
+        else:
+            try:
+                data[field] = json.loads(value)
+            except ValueError:
+                data[field] = value
+        self.bot.market.save_product(a, data, product_id)
+        await respond(ctx, 'Product updated', f'Updated **{field}** for {product.name}. Existing orders keep their original purchase terms.')
+
+    @commands.hybrid_command(help='Publish or unpublish a product after reviewing its details (staff).')
+    @commands.guild_only()
+    async def productpublish(self, ctx, product_id: str, published: bool = True):
+        from ..models import Product
+        a = actor(ctx)
+        a.require(self.bot.core.config(ctx.guild.id))
+        with self.bot.db.sessions() as session:
+            p = session.get(Product, product_id)
+            if not p or p.guild_id != ctx.guild.id or p.category not in ('template', 'source'):
+                raise DomainError('Product not found.')
+            data = {key: getattr(p, key) for key in ProductInput.model_fields}
+        data['published'] = published
+        self.bot.market.save_product(a, data, product_id)
+        await respond(ctx, 'Storefront updated', f'**{p.name}** is now {"published" if published else "unpublished"}. Use /shop to browse the collection.')
 
     @commands.hybrid_command(help='Create a confirmed order or claim a free product.')
     @commands.guild_only()
@@ -49,7 +90,7 @@ class Commerce(commands.Cog):
         from ..models import Product
         with self.bot.db.sessions() as s:
             p = s.get(Product, product_id)
-            if not p or p.guild_id != ctx.guild.id or not p.published or p.archived:
+            if not p or p.category not in ('template', 'source') or p.guild_id != ctx.guild.id or not p.published or p.archived:
                 raise DomainError('Product not found.')
             shown = (p.price, p.currency, p.terms, p.name)
         if not await confirm(ctx, f'{p.name}\n{p.currency} {p.price/100:.2f}\n{p.terms[:2000]}\nConfirm this order?'):
@@ -66,18 +107,21 @@ class Commerce(commands.Cog):
         await self.purchase_ticket(ctx, a, order)
 
     async def purchase_ticket(self, ctx, a, order):
-        key = (ctx.guild.id, ctx.author.id)
+        await self.send_purchase_ticket(ctx.guild, ctx.author, a, order, ctx.send)
+
+    async def send_purchase_ticket(self, guild, customer, a, order, reply):
+        key = (guild.id, customer.id)
         lock = self.bot.ticket_locks.setdefault(key, asyncio.Lock())
         async with lock:
-            _, channel = await self.bot.tickets.open(a, ctx.guild, ctx.author, 'purchase', order.id)
-        cfg = self.bot.core.config(ctx.guild.id)
+            _, channel = await self.bot.tickets.open(a, guild, customer, 'purchase', order.id)
+        cfg = self.bot.core.config(guild.id)
         item = embed('Manual payment • staff verification required', f'Order: `{order.id}`\nAmount: **{order.currency} {order.amount/100:.2f}**\nPayee: {cfg["payee"]}\nUPI: `{cfg["upi_id"]}`\n\n{cfg["payment_instructions"]}\n\nUpload your receipt with `/payment`. A screenshot alone is not proof of payment. Staff will independently check the transaction.')
         if cfg['qr_url']:
             item.set_image(url=cfg['qr_url'])
-        await channel.send(content=f'<@{ctx.author.id}>', embed=item)
-        await respond(ctx, 'Purchase ticket ready', f'Continue in {channel.mention}. Order `{order.id}`')
+        await channel.send(content=f'<@{customer.id}>', embed=item)
+        await reply(embed=embed('Purchase ticket ready', f'Continue in {channel.mention}. Order `{order.id}`'), ephemeral=True)
 
-    @commands.hybrid_command(help='Open a support, appeal or hosting ticket; resume a purchase with its order ID.')
+    @commands.hybrid_command(help='Open a support or appeal ticket; resume a purchase with its order ID.')
     @commands.guild_only()
     @commands.cooldown(2, 60, commands.BucketType.user)
     async def ticket(self, ctx, category: str = 'support', order_id: str = ''):
@@ -141,15 +185,12 @@ class Commerce(commands.Cog):
         order = self.bot.market.review_payment(a, order_id, approve, reason)
         await respond(ctx, 'Payment decision recorded', f'Order `{order.id}` • {order.state}')
 
-    @commands.hybrid_command(help='Retrieve an entitled product privately; hosting shows handoff status.')
+    @commands.hybrid_command(help='Retrieve an entitled product privately; after a free claim or verified payment.')
     @commands.guild_only()
     @commands.cooldown(3, 60, commands.BucketType.user)
     async def deliver(self, ctx, order_id: str):
         a = actor(ctx)
         result = self.bot.market.delivery(a, order_id)
-        if result['delivery_kind'] == 'hosting':
-            await respond(ctx, 'Hosting handoff', 'Your verified order is in the staff provisioning queue. Use /orders for status.')
-            return
         if result['delivery_kind'] == 'file':
             await ctx.author.send(embed=embed(result['name'], 'Your product file is attached.'), file=discord.File(result['path']))
         else:
@@ -157,15 +198,14 @@ class Commerce(commands.Cog):
         self.bot.market.delivered(a, order_id)
         await respond(ctx, 'Delivery sent', 'Your product is in your DMs.')
 
-    @commands.hybrid_command(help='View your latest orders and hosting status.')
+    @commands.hybrid_command(help='View your latest orders and delivery status.')
     @commands.guild_only()
     async def orders(self, ctx, page: int = 1):
         with self.bot.db.sessions() as s:
             rows = list(s.scalars(select(Order).where(Order.guild_id == ctx.guild.id, Order.user_id == ctx.author.id).order_by(Order.created_at.desc()).offset((max(1, page)-1)*8).limit(8)))
             lines = []
             for o in rows:
-                h = s.scalar(select(Hosting).where(Hosting.order_id == o.id))
-                lines.append(f'**{o.snapshot["name"]}** • {o.state}' + (f' • hosting: {h.state}' if h else '') + f'\n`{o.id}` • {o.currency} {o.amount/100:.2f}')
+                lines.append(f'**{o.snapshot["name"]}** • {o.state}' + f'\n`{o.id}` • {o.currency} {o.amount/100:.2f}')
         # Text-command results are sent by DM to avoid exposing order details.
         if not ctx.interaction:
             await ctx.author.send(embed=embed('Your orders', '\n'.join(lines) or 'No orders yet.'))
@@ -176,13 +216,7 @@ class Commerce(commands.Cog):
     @commands.guild_only()
     async def orderstate(self, ctx, order_id: str, state: str, *, reason: str):
         self.bot.market.change_order(actor(ctx), order_id, state, reason)
-        await respond(ctx, 'Order updated', 'This command records a decision. It does not send money or stop a hosting provider resource.')
-
-    @commands.hybrid_command(help='Record an actual manual hosting provisioning result (staff).')
-    @commands.guild_only()
-    async def hosting(self, ctx, hosting_id: str, state: str, *, notes: str):
-        row = self.bot.community.hosting(actor(ctx), hosting_id, state, notes)
-        await respond(ctx, 'Hosting updated', f'{row.id} • {row.state}')
+        await respond(ctx, 'Order updated', 'This command records a decision. It does not send money.')
 
     @commands.hybrid_command(help='Grant, extend, revoke or inspect premium. Zero days means lifetime.')
     @commands.guild_only()
@@ -213,7 +247,7 @@ class Commerce(commands.Cog):
         with self.bot.db.transaction() as s:
             r = s.get(Review, review_id)
             p = s.get(Product, r.product_id) if r else None
-            if not p or p.guild_id != ctx.guild.id:
+            if not p or p.category not in ('template', 'source') or p.guild_id != ctx.guild.id:
                 raise DomainError('Review not found.')
             r.hidden = hidden
             audit(s, a, 'review.moderate', review_id, hidden=hidden, reason=reason)

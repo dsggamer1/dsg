@@ -1,24 +1,5 @@
-from abc import ABC, abstractmethod
 import httpx
 from ..security import DomainError
-
-
-class HostingProvider(ABC):
-    @abstractmethod
-    async def provision(self, order_id: str, capacity: str) -> str:
-        """Return a real provider resource ID only after successful provisioning."""
-
-    @abstractmethod
-    async def stop(self, resource_id: str) -> None:
-        pass
-
-
-class ManualHosting(HostingProvider):
-    async def provision(self, order_id, capacity):
-        raise DomainError('Manual hosting: staff must provision and record the result.')
-
-    async def stop(self, resource_id):
-        raise DomainError('Manual hosting: staff must stop the resource at the provider.')
 
 
 class AIProvider:

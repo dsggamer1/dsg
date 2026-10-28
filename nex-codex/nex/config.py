@@ -15,7 +15,9 @@ class Settings(BaseSettings):
     session_secret: str = ''
     cookie_secure: bool = False
     owner_ids: list[int] = Field(default_factory=list)
-    default_prefix: str = '!'
+    default_prefix: str = Field(default='!', min_length=1, max_length=5)
+    sync_commands: bool = True
+    command_guild_ids: list[int] = Field(default_factory=list, max_length=25)
     product_root: Path = Path('private/products')
     ai_api_key: str = ''
     ai_base_url: str = 'https://api.openai.com/v1'
@@ -23,6 +25,8 @@ class Settings(BaseSettings):
 
     @model_validator(mode='after')
     def secure_public_deployment(self):
+        if any(not 0 < value < 2**63 for value in self.command_guild_ids + self.owner_ids):
+            raise ValueError('Discord IDs must be positive 64-bit integers.')
         if self.public_url.startswith('https://') and not self.cookie_secure:
             raise ValueError('HTTPS deployments require COOKIE_SECURE=true')
         return self

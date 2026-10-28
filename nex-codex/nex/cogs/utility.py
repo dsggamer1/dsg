@@ -6,15 +6,21 @@ from ..security import DomainError
 from ..services.providers import AIProvider
 
 
+HELP_CATEGORIES = {'Utility': ('◇', 'Server essentials'), 'Moderation': ('🛡️', 'Moderation & safety'), 'Commerce': ('🛍️', 'Shop & support'), 'Community': ('✦', 'Community & fun')}
+
+
 class HelpSelect(discord.ui.Select):
     def __init__(self, bot):
         self.bot = bot
-        super().__init__(placeholder='Choose a command category', options=[discord.SelectOption(label=name, value=name) for name in bot.cogs if bot.get_cog(name).get_commands()])
+        super().__init__(placeholder='Choose a command category', options=[discord.SelectOption(label=HELP_CATEGORIES.get(name, ('', name))[1], value=name) for name in bot.cogs if bot.get_cog(name).get_commands()])
 
     async def callback(self, interaction):
         cog = self.bot.get_cog(self.values[0])
-        lines = [f'**/{c.qualified_name}** — {c.help or "Server utility"}' for c in cog.get_commands() if not c.hidden]
-        await interaction.response.edit_message(embed=embed(f'{cog.qualified_name} commands', '\n'.join(lines)), view=self.view)
+        item = embed(HELP_CATEGORIES.get(cog.qualified_name, ('', cog.qualified_name))[1], 'Slash commands and your server prefix both work. Parameters in <brackets> are required.')
+        for command in sorted(cog.get_commands(), key=lambda c: c.name):
+            if not command.hidden:
+                item.add_field(name=f'/{command.qualified_name}', value=f'{command.help or "Server utility"}\n`{command.name} {command.signature}`'[:1024], inline=False)
+        await interaction.response.edit_message(embed=item, view=self.view)
 
 
 class RoleSelect(discord.ui.Select):
@@ -29,7 +35,7 @@ class RoleSelect(discord.ui.Select):
         try:
             if role_id not in cfg['self_roles'] or not role:
                 raise DomainError('This role is no longer available.')
-            safe_role(interaction.guild, None, role)
+            safe_role(interaction.guild, None, role, cfg['staff_roles'] + cfg['payment_roles'])
             if role in interaction.user.roles:
                 await interaction.user.remove_roles(role, reason='Self-service role')
             else:
@@ -48,7 +54,14 @@ class Utility(commands.Cog):
     async def help(self, ctx):
         view = discord.ui.View(timeout=180)
         view.add_item(HelpSelect(self.bot))
-        await respond(ctx, 'NEX CODEX command center', 'Choose a category below. Commands support slash and configured text prefixes. Sensitive commands check permissions on the server.', view=view)
+        item = embed('NEX CODEX • Command center', 'Your community, your collection, your rules. Choose a category below to see commands and how to use them.')
+        for name, (icon, label) in HELP_CATEGORIES.items():
+            cog = self.bot.get_cog(name)
+            if cog:
+                names = [f'`/{c.name}`' for c in cog.get_commands() if not c.hidden]
+                item.add_field(name=f'{icon} {label}', value=' · '.join(names), inline=False)
+        item.add_field(name='Start here', value='Members: /ping · /shop · /roles\nAdmins: /setup · /diagnostics · /productadd', inline=False)
+        await ctx.send(embed=item, view=view, ephemeral=True)
 
     @commands.hybrid_command(help='Check gateway latency.')
     async def ping(self, ctx):
@@ -56,7 +69,7 @@ class Utility(commands.Cog):
 
     @commands.hybrid_command(help='Bot version and service information.')
     async def about(self, ctx):
-        await respond(ctx, 'NEX CODEX', f'Modular community management and marketplace.\nVersion **1.0.0** • {len(self.bot.guilds)} servers\nDashboard: {self.bot.config.public_url}\nPayments are reviewed manually by server staff.')
+        await respond(ctx, 'NEX CODEX', f'Modular community management and marketplace.\nVersion **1.1.0** • {len(self.bot.guilds)} servers\nDashboard: {self.bot.config.public_url}\nPayments are reviewed manually by server staff.')
 
     @commands.hybrid_command(help='Show server information.')
     @commands.guild_only()
@@ -107,7 +120,8 @@ class Utility(commands.Cog):
     @commands.has_guild_permissions(manage_roles=True)
     @commands.bot_has_guild_permissions(manage_roles=True)
     async def role(self, ctx, member: discord.Member, role: discord.Role, remove: bool = False):
-        safe_role(ctx.guild, ctx.author, role)
+        cfg = self.bot.core.config(ctx.guild.id)
+        safe_role(ctx.guild, ctx.author, role, cfg['staff_roles'] + cfg['payment_roles'])
         await (member.remove_roles(role, reason=f'NEX role utility by {ctx.author.id}') if remove else member.add_roles(role, reason=f'NEX role utility by {ctx.author.id}'))
         await respond(ctx, 'Role updated', f'{role.name} {"removed from" if remove else "assigned to"} {member.display_name}.')
 
@@ -140,13 +154,42 @@ class Utility(commands.Cog):
     async def ask(self, ctx, *, prompt: str):
         if not self.bot.core.config(ctx.guild.id)['ai_enabled']:
             raise DomainError('AI is disabled in this server.')
-        await ctx.defer(ephemeral=True)
         await respond(ctx, 'AI response', await AIProvider(self.bot.config).ask(prompt))
+
+    @commands.hybrid_command(help='Guided setup for community tools, private tickets and the template/source shop.')
+    @commands.guild_only()
+    @commands.has_guild_permissions(administrator=True)
+    async def setup(self, ctx):
+        cfg = self.bot.core.config(ctx.guild.id)
+        item = embed('NEX CODEX • Build your server', 'Start with community essentials, then open your collection. All settings are saved per server.')
+        item.add_field(name='01 · Staff & private tickets', value='Use /configure with `staff_roles` and `payment_roles` as JSON arrays of role IDs. Optionally set `ticket_category` and `log_channel`.', inline=False)
+        item.add_field(name='02 · Community experience', value='Configure welcome/leave channels and templates, safe `self_roles`, and `leveling_enabled`. Create polls and giveaways when you are ready.', inline=False)
+        item.add_field(name='03 · Manual QR payments', value='Set `upi_id`, `qr_url`, `payee`, and `currency`. Only authorized reviewers approve actual transactions; screenshots never auto-approve.', inline=False)
+        item.add_field(name='04 · Your products', value='Use /productadd with `template` or `source`, a price such as `499.00`, and private delivery instructions or an HTTPS link. Edit terms with /productedit, then /productpublish.', inline=False)
+        item.add_field(name='Current status', value=f'Staff roles: {len(cfg["staff_roles"])} · Review roles: {len(cfg["payment_roles"])}\nPayments: {"Configured" if cfg["upi_id"] and cfg["qr_url"] and cfg["payee"] else "Needs setup"}', inline=False)
+        await ctx.send(embed=item, ephemeral=True)
+
+    @commands.hybrid_command(help='Check command setup, prefix and bot permissions (administrators).')
+    @commands.guild_only()
+    @commands.has_guild_permissions(administrator=True)
+    async def diagnostics(self, ctx):
+        from ..bot import prefix
+        prefixes = await prefix(self.bot, ctx.message)
+        perms = ctx.channel.permissions_for(ctx.guild.me)
+        needed = ('view_channel', 'send_messages', 'embed_links', 'attach_files', 'read_message_history')
+        missing = [name.replace('_', ' ') for name in needed if not getattr(perms, name)]
+        item = embed('NEX CODEX • Connection check', 'These checks show local configuration. Discord Developer Portal intents and remote command visibility still need to be checked in your account.')
+        item.add_field(name='Commands loaded', value=str(len(self.bot.tree.get_commands())))
+        item.add_field(name='Text prefix', value=f'`{prefixes[-1]}`')
+        item.add_field(name='This channel', value=', '.join(missing) if missing else 'Core permissions available', inline=False)
+        item.add_field(name='If commands are missing', value='Invite with both bot and applications.commands scopes. Automatic sync runs at startup. Set COMMAND_GUILD_IDS in .env to your server ID array for server-specific registration.', inline=False)
+        item.add_field(name='If prefix commands do not respond', value='Enable Message Content Intent in Developer Portal → Bot. Enable Server Members Intent too. Then restart with python main.py.', inline=False)
+        await ctx.send(embed=item, ephemeral=True)
 
     @commands.command(hidden=True)
     @commands.is_owner()
     async def sync(self, ctx):
-        commands_synced = await self.bot.tree.sync()
+        commands_synced = await self.bot.publish_commands()
         await respond(ctx, 'Commands synchronized', f'{len(commands_synced)} slash commands registered.')
 
 

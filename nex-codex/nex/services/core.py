@@ -28,6 +28,9 @@ class Core:
             value = GuildConfig.model_validate(config(s, actor.guild_id) | changes).model_dump()
             if actor.guild_id in value['staff_roles'] + value['payment_roles'] + value['self_roles']:
                 raise DomainError('The everyone role cannot be used for staff, payment review or self-service.')
+            automatic_roles = set(value['self_roles']) | set(value['level_rewards'].values()) | {value['auto_role']}
+            if automatic_roles.intersection(value['staff_roles'] + value['payment_roles']):
+                raise DomainError('Staff and payment roles cannot be self-service, auto-role or level rewards.')
             row = s.get(Guild, actor.guild_id)
             if row:
                 row.settings = value
