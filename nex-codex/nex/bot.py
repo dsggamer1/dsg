@@ -10,6 +10,7 @@ from .services.core import Core
 from .services.marketplace import Marketplace
 from .services.tickets import Tickets
 from .services.community import Community
+from .services.emojis import ApplicationEmojiLoader
 from .security import DomainError, RateLimiter
 from .utils.discord import embed
 from .utils.theme import themed_embed
@@ -50,10 +51,27 @@ class NexBot(commands.Bot):
 
     async def setup_hook(self):
         self.db.initialize()
+        if self.config.auto_load_emojis:
+            await self.load_startup_emojis()
         for extension in ('utility', 'commerce', 'community', 'events'):
             await self.load_extension('nex.cogs.' + extension)
         if self.config.sync_commands:
             await self.publish_commands()
+
+    async def load_startup_emojis(self):
+        logger = logging.getLogger('nex')
+        logger.info('emojis.application.start')
+        try:
+            # Prevent optional artwork from indefinitely delaying the gateway login.
+            result = await asyncio.wait_for(ApplicationEmojiLoader(self).load(), timeout=180)
+        except asyncio.TimeoutError:
+            logger.warning('emojis.application.timeout Successful icons remain active; restart to resume. Unicode fallbacks remain available.')
+        except discord.MissingApplicationID:
+            logger.warning('emojis.application.unavailable Application identity missing; restart with a valid bot token. Unicode fallbacks remain available.')
+        else:
+            logger.info('emojis.application.loaded created=%s reused=%s mapped=%s', result['created'], result['reused'], result['mapped'])
+            if result['failure']:
+                logger.warning('emojis.application.partial %s Unicode fallbacks remain available.', result['failure'])
 
     async def publish_commands(self):
         registered = await self.tree.sync()

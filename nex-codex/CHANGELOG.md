@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.1 — 2026-10-28
+
+- Correct the manual-only emoji workflow: main.py now automatically uploads/reuses all49 bundled application-owned emojis at startup by default, with the existing bot token. No installer command/server emoji permissions or slots are needed for the automatic artwork.
+- Restore returned emoji IDs before cog/persistent-view initialization; keep explicit server overrides and the optional server-owned installer.
+- Add progress logging, reuse after restarts/moving hosts, partial success/fallback handling, capacity checks and a180-second startup bound. AUTO_LOAD_EMOJIS=false disables this optional behavior.
+- Document Wispbyte's complete-folder upload and extend startup/API-mock regression coverage. No live upload or Wispbyte deployment claimed.
+
 ## 1.3.0 — 2026-10-28
 
 - Allow configured bot owners OR current server administrators to integrate/configure their server through commands, services and the dashboard, replacing v1.2's owner-only settings rule at the user's request.

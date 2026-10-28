@@ -19,16 +19,17 @@ The ZIP contains a blank starter **`.env`** (one leading dot). Set these locally
 DISCORD_TOKEN=YOUR_BOT_TOKEN
 OWNER_IDS=[123456789012345678]
 SYNC_COMMANDS=true
+AUTO_LOAD_EMOJIS=true
 COMMAND_GUILD_IDS=[123456789012345678]
 ```
 
 Replace the example owner ID with **your Discord user ID** and the command guild ID with **your server ID**. These are different IDs. Both lists use valid JSON, without quotes around numbers. `COMMAND_GUILD_IDS=[]` uses global registration only; direct guild registration is useful for immediate visibility. Do not post your populated environment file or token. Keep your existing `.env` when updating the project. The tracked starter has empty secrets; never commit a populated copy.
 
-`main.py` initializes the database and starts the bot. The database and `private/products/` need persistent storage. The tested Python 3.14 dependency snapshot is in `requirements.lock`; use `requirements.txt` on Python 3.11.
+`main.py` initializes the database, automatically uploads/reuses the bundled application emojis, then starts the bot. The database and `private/products/` need persistent storage. The tested Python 3.14 dependency snapshot is in `requirements.lock`; use `requirements.txt` on Python 3.11.
 
 ### Wispbyte / Python panels
 
-Upload the **contents of `NEX_CODEX/`** together. Select Python 3.11 or newer, install `requirements.txt`, and set the startup file to `main.py` or command to `python main.py`. Enable hidden-file display to find `.env`. Wispbyte itself has not been accessed or tested. The dashboard is optional and needs a separate web process/port supported by your plan.
+Upload the **contents of `NEX_CODEX/`** together. Select Python 3.11 or newer, install `requirements.txt`, and set the startup file to `main.py` or command to `python main.py`. Enable hidden-file display to find `.env`. Keep the entire `nex/assets/emojis/` folder from the ZIP. `AUTO_LOAD_EMOJIS=true` is the default: no manual emoji upload, emoji IDs or `/installemojis` command is required. The same bot token authorizes the application emoji API. First startup uploads missing artwork; later starts reuse it. Console progress appears as `emojis.application.progress` and `emojis.application.loaded`. Wispbyte itself has not been accessed or tested. The dashboard is optional and needs a separate web process/port supported by your plan.
 
 ### Discord Developer Portal
 
@@ -101,7 +102,15 @@ Owners and server administrators can customize the `emojis` JSON configuration. 
 /configure key:emojis value:{"welcome":"👋","giveaway":"🎉","shop":"🛍️"}
 ```
 
-Unicode emojis and Discord custom codes (`<:name:ID>` or `<a:name:ID>`) are validated. Custom emojis must exist and be available to the bot in Discord; inaccessible custom emojis cannot be verified offline. The supplied artwork is bundled under `nex/assets/emojis/`: 48 original icons plus a mirrored back arrow, each 128×128 PNG. Run **`/installemojis`** as an owner or administrator. Give the bot Create Expressions or Manage Expressions permission and allow up to 14 free static emoji slots. The command uploads only the icons used by the theme, reuses existing available unrestricted `nex_*` emojis, and saves actual returned IDs in this server’s configuration. Partial failures are reported; successful mappings are retained and retry reuses uploads. Existing non-theme icons are available for manual upload. No image-processing dependencies are needed to run the bot. Repost shop panels/giveaways to change their existing button appearance; new embeds and views use the current configuration. Fresh installs use Unicode defaults until the installer completes; no custom IDs are invented.
+The complete ZIP contains **all 49 PNGs** under `nex/assets/emojis/` (48 supplied icons plus a mirrored back arrow). With `AUTO_LOAD_EMOJIS=true` (default), startup fetches this application's existing emojis, uploads missing `nex_*` icons, and applies the returned IDs to embeds, help menus and buttons **before commands become available**. No separate emoji pack installation or command is needed on Wispbyte. Uploaded icons persist in Discord; restarting or moving hosts with the same token reuses them.
+
+The 14 theme slots use these application-owned icons throughout the bot; the remaining supplied icons are also uploaded to the application for future use. Application emojis use the bot token, do not consume server emoji slots and do not need Create/Manage Expressions or Use External Emojis server permissions. See [Discord's application emoji reference](https://docs.discord.com/developers/resources/emoji#application-owned-emoji).
+
+Existing server `emojis` overrides take priority. Set `/configure key:emojis value:{}` to use the automatic artwork for every slot. Unicode/custom Discord codes (`<:name:ID>` or `<a:name:ID>`) remain supported. Custom overrides must exist and be usable by the bot.
+
+Optional `/installemojis` still uploads/reuses 14 **server-owned** theme icons and saves per-server overrides; that optional command requires Create Expressions or Manage Expressions plus server slots. It is not needed for automatic application emoji loading.
+
+Failures are reported in the hosting console. Successful partial uploads remain in Discord and completed theme slots stay active; other slots use Unicode fallbacks. Startup waits at most 180 seconds for artwork, then continues with available icons. Restart to resume after fixing connection, application capacity or missing image files. `AUTO_LOAD_EMOJIS=false` disables automatic loading. Repost old shop/giveaway messages to refresh their existing button appearance. No Pillow/image-processing dependency is required at runtime. Live upload success requires the real bot token and is not established by offline tests.
 
 ## Products and persistent shop
 

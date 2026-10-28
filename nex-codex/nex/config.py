@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     cookie_secure: bool = False
     owner_ids: list[int] = Field(default_factory=list)
     default_prefix: str = Field(default='!', min_length=1, max_length=5)
+    auto_load_emojis: bool = True
     sync_commands: bool = True
     command_guild_ids: list[int] = Field(default_factory=list, max_length=25)
     product_root: Path = Path('private/products')

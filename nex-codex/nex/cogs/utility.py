@@ -147,7 +147,7 @@ class Utility(commands.Cog):
         item.add_field(name='02 · Private support', value='Use /configure to set staff_roles, payment_roles, ticket_category and log_channel. Role lists use JSON arrays of numeric IDs.', inline=False)
         item.add_field(name='03 · Your collection', value='Create drafts with /addproduct, review terms with /productedit, then /productpublish. /createshop posts a permanent browse button.', inline=False)
         item.add_field(name='04 · Manual payments', value='Configure upi_id, qr_url, payee and currency. Reviewers independently verify transactions; screenshots never auto-approve.', inline=False)
-        item.add_field(name='05 · Brand details', value='Run /installemojis for the supplied cyan artwork. Configure shop_title, shop_description, shop_image and emojis. Emoji slots include welcome, leave, ticket, giveaway, broadcast, product, shop and help.', inline=False)
+        item.add_field(name='05 · Brand details', value='The bundled cyan emojis load automatically at startup. /installemojis optionally overrides them with server emojis. Configure shop_title, shop_description, shop_image and emojis. Emoji slots include welcome, leave, ticket, giveaway, broadcast, product, shop and help.', inline=False)
         await ctx.send(embed=item, ephemeral=True)
 
     @commands.hybrid_command(extras={'admin_only': True}, help='Check local command setup and channel permissions (owner or administrator).')

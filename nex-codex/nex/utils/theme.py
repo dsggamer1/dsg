@@ -1,4 +1,4 @@
-"""Shared emoji slots for Discord embeds and components; customizable by bot owners."""
+"""Shared emoji slots for Discord embeds and components; with automatic application artwork and per-server overrides."""
 import re
 from .discord import embed
 
@@ -8,6 +8,16 @@ DEFAULT_EMOJIS = {
     'help': '✦', 'settings': '⚙️', 'success': '✓', 'error': '⚠️',
     'previous': '◀️', 'next': '▶️',
 }
+
+
+_APPLICATION_EMOJIS = {}
+
+
+def set_application_emojis(mapping):
+    """Use IDs fetched/created by the authenticated bot; server overrides take priority."""
+    validate_emojis(mapping)
+    _APPLICATION_EMOJIS.clear()
+    _APPLICATION_EMOJIS.update(mapping)
 
 
 def validate_emojis(values):
@@ -24,7 +34,7 @@ def validate_emojis(values):
 
 
 def emoji_for(key, config=None):
-    return (config or {}).get('emojis', {}).get(key, DEFAULT_EMOJIS[key])
+    return (config or {}).get('emojis', {}).get(key, _APPLICATION_EMOJIS.get(key, DEFAULT_EMOJIS[key]))
 
 
 def themed_embed(key, title, description='', *, config=None, error=False):

@@ -14,14 +14,14 @@ from nex.cogs.commerce import Commerce
 
 
 async def new_bot(db, tmp_path):
-    bot = NexBot(Settings(_env_file=None, product_root=tmp_path, sync_commands=False, owner_ids=[100]), db)
+    bot = NexBot(Settings(_env_file=None, product_root=tmp_path, auto_load_emojis=False, sync_commands=False, owner_ids=[100]), db)
     await bot._async_setup_hook()
     await bot.setup_hook()
     return bot
 
 
 async def test_startup_automatically_registers_commands(db, tmp_path):
-    bot = NexBot(Settings(_env_file=None, product_root=tmp_path, sync_commands=True, command_guild_ids=[1000]), db)
+    bot = NexBot(Settings(_env_file=None, product_root=tmp_path, auto_load_emojis=False, sync_commands=True, command_guild_ids=[1000]), db)
     bot.tree.sync = AsyncMock(return_value=[])
     async with bot:
         await bot.setup_hook()
@@ -35,7 +35,7 @@ async def test_startup_automatically_registers_commands(db, tmp_path):
 
 
 async def test_prefix_respects_environment_then_guild_override(db, tmp_path):
-    bot = NexBot(Settings(_env_file=None, default_prefix='?', sync_commands=False), db)
+    bot = NexBot(Settings(_env_file=None, default_prefix='?', auto_load_emojis=False, sync_commands=False), db)
     bot._connection.user = SimpleNamespace(id=999)
     message = SimpleNamespace(guild=SimpleNamespace(id=1000))
     assert (await prefix(bot, message))[-1] == '?'
@@ -47,7 +47,7 @@ async def test_prefix_respects_environment_then_guild_override(db, tmp_path):
 
 @pytest.mark.parametrize('name,private', [('ticket',True),('deliver',True),('paymentreview',True),('broadcast',True),('giveaway',False),('shop',False)])
 async def test_slower_slash_commands_are_acknowledged(db,name,private):
-    bot = NexBot(Settings(_env_file=None, sync_commands=False), db)
+    bot = NexBot(Settings(_env_file=None, auto_load_emojis=False, sync_commands=False), db)
     ctx = SimpleNamespace(interaction=SimpleNamespace(response=SimpleNamespace(is_done=lambda:False)),command=SimpleNamespace(name=name),defer=AsyncMock())
     await bot.prepare_command(ctx)
     ctx.defer.assert_awaited_once_with(ephemeral=private)

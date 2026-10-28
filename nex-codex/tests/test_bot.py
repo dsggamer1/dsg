@@ -4,7 +4,7 @@ from nex.config import Settings
 
 
 async def test_extensions_and_slash_registration_without_discord_network(db,tmp_path):
-    config=Settings(_env_file=None,product_root=tmp_path,sync_commands=False)
+    config=Settings(_env_file=None,product_root=tmp_path,auto_load_emojis=False, sync_commands=False)
     bot=NexBot(config,db)
     async with bot:
         await bot.setup_hook()
