@@ -1,7 +1,6 @@
-from datetime import timedelta
 import secrets
-from sqlalchemy import select, func
-from ..models import Entitlement, Order, Review, Reward, Referral, Level, Giveaway, Entry, now
+from sqlalchemy import select
+from ..models import Giveaway, Entry, now
 from ..security import DomainError
 from .core import config, audit
 
@@ -9,51 +8,6 @@ from .core import config, audit
 class Community:
     def __init__(self, db):
         self.db = db
-
-    def review(self, actor, product_id, rating, text):
-        if not 1 <= rating <= 5 or not 1 <= len(text.strip()) <= 1000:
-            raise DomainError('Use a rating from 1–5 and 1–1000 characters.')
-        with self.db.transaction() as s:
-            e = s.scalar(select(Entitlement).where(Entitlement.guild_id == actor.guild_id, Entitlement.user_id == actor.user_id, Entitlement.product_id == product_id))
-            if not e:
-                raise DomainError('Only entitled customers may review this product.')
-            if not config(s, actor.guild_id)['reviews_allow_free'] and s.get(Order, e.order_id).amount == 0:
-                raise DomainError('This server requires a paid purchase to review.')
-            if s.scalar(select(Review).where(Review.product_id == product_id, Review.user_id == actor.user_id)):
-                raise DomainError('You already reviewed this product.')
-            s.add(Review(product_id=product_id, user_id=actor.user_id, rating=rating, text=text))
-            audit(s, actor, 'review.create', product_id)
-
-    def refer(self, actor, referrer_id):
-        if actor.user_id == referrer_id:
-            raise DomainError('You cannot refer yourself.')
-        with self.db.transaction() as s:
-            cfg = config(s, actor.guild_id)
-            if not cfg['rewards_enabled']:
-                raise DomainError('Referral rewards are disabled.')
-            if s.scalar(select(Referral).where(Referral.guild_id == actor.guild_id, Referral.invitee_id == actor.user_id)):
-                raise DomainError('A referral has already been recorded.')
-            if not s.scalar(select(Entitlement).where(Entitlement.guild_id == actor.guild_id, Entitlement.user_id == actor.user_id)):
-                raise DomainError('Claim or purchase a product before redeeming a referral.')
-            s.add(Referral(guild_id=actor.guild_id, referrer_id=referrer_id, invitee_id=actor.user_id))
-            s.add(Reward(guild_id=actor.guild_id, user_id=referrer_id, points=cfg['referral_points'], event_key=f'referral:{actor.guild_id}:{actor.user_id}'))
-            audit(s, actor, 'referral.redeem', referrer_id)
-
-    def xp(self, guild_id, user_id):
-        with self.db.transaction() as s:
-            cfg = config(s, guild_id)
-            if not cfg['leveling_enabled']:
-                return None
-            row = s.scalar(select(Level).where(Level.guild_id == guild_id, Level.user_id == user_id))
-            if not row:
-                row = Level(guild_id=guild_id, user_id=user_id, xp=0)
-                s.add(row)
-            if row.last_xp and row.last_xp + timedelta(seconds=cfg['xp_cooldown']) > now():
-                return None
-            old = row.xp // 100
-            row.xp += 10
-            row.last_xp = now()
-            return row.xp // 100 if row.xp // 100 > old else None
 
     def enter(self, actor, giveaway_id):
         with self.db.transaction() as s:

@@ -89,7 +89,7 @@ async def test_product_category_choices_are_real_registered_options(db,tmp_path)
     bot=await new_bot(db,tmp_path)
     payload=bot.tree.get_command('addproduct').to_dict(bot.tree)
     category=next(o for o in payload['options'] if o['name']=='category')
-    assert {c['value'] for c in category['choices']}=={'template','source'}
+    assert {c['value'] for c in category['choices']}=={'template','bot'}
     await bot.close()
 
 

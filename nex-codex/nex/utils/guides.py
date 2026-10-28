@@ -8,13 +8,13 @@ GUIDES = {
     'start': ('Start here', [
         ('01 · Your access', 'Set `OWNER_IDS=[YOUR_DISCORD_USER_ID]` in .env and restart. Bot owners manage products and shop panels. Owners or server administrators configure the server.'),
         ('02 · Payment & tickets', 'Run `/paymentsetup` and fill in your UPI ID, payee name, HTTPS QR image URL, staff role, reviewer role and ticket category. Select roles/channels from Discord suggestions.'),
-        ('03 · Add → publish → shop', 'Owner: run `/addproduct`, copy its product ID, set terms with `/productedit`, then `/productpublish`. Finally `/createshop` posts a lasting Browse button.'),
+        ('03 · Add → publish → shop', 'Owner: run `/addproduct`, select its short product ID from suggestions, set terms with `/productedit`, then `/productpublish`. Finally `/createshop` posts a lasting Browse button.'),
         ('04 · Community', 'Run `/welcome`, `/leave`, `/broadcast` or `/giveaway`. Choose a guide page below for exact examples. Advanced settings remain available through `/configure`.'),
     ]),
     'products': ('Add products · owner only', [
-        ('Category & price', '`template` = Discord server template. `source` = bot source code. Price `499` means 499 currency units (INR by default); `499.50` is allowed; `0` makes it free. Do not enter ₹ or commas.'),
+        ('Category & price', '`template` = Discord server template. `bot` = bot source code. Price `499` means 499 currency units (INR by default); `499.50` is allowed; `0` makes it free. Do not enter ₹ or commas.'),
         ('Create a draft', 'Slash command fields:\n`/addproduct name: Gaming Server category: template price: 499 delivery: YOUR_HTTPS_DOWNLOAD_URL description: Gaming server layout`\nUse your own delivery URL or delivery instructions. The delivery value is only sent after an eligible claim or verified payment.'),
-        ('Set terms & publish', '`/productedit product_id: PRODUCT_ID field: terms value: Personal use only; no resale.`\n`/productpublish product_id: PRODUCT_ID published: true`\nCopy PRODUCT_ID from the draft response. Drafts do not appear in /shop.'),
+        ('Set terms & publish', '`/productedit product_id: PRODUCT_ID field: terms value: Personal use only; no resale.`\n`/productpublish product_id: PRODUCT_ID published: true`\nSelect product name/short ID from suggestions; /productid changes the short ID. Drafts do not appear in /shop.'),
         ('Edit / pause sales', '`/productedit product_id: PRODUCT_ID field: price value: 599`\n`/productpublish product_id: PRODUCT_ID published: false`\nUse `/createshop channel: #shop`, then `/shop` to check published products.'),
         ('Private files', 'Upload your .zip/.json file under `private/products/` on the host. Set `delivery_kind` to `file` and `delivery_value` to its relative filename with /productedit. Never use an absolute host path. Existing orders keep the delivery terms saved at checkout.'),
     ]),

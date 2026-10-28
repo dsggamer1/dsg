@@ -3,7 +3,7 @@ from sqlalchemy import select, func
 import pytest
 from pydantic import ValidationError
 from nex.security import Actor, DomainError
-from nex.models import Order, Payment, Entitlement, Audit, Product, Hosting
+from nex.models import Order, Payment, Entitlement, Audit, Product
 from nex.schemas import ProductInput
 
 RECEIPT = 'https://cdn.discordapp.com/attachments/123/456/synthetic.png'
@@ -129,14 +129,14 @@ def test_manual_refund_revokes_access(market, paid, buyer, owner):
 @pytest.mark.parametrize('changes', [{'price': -1}, {'category': 'invalid'}, {'currency': 'usd'}, {'delivery_kind': 'link', 'delivery_value': 'http://example.com'}, {'delivery_kind':'file', 'delivery_value':'../secret'}, {'delivery_kind':'file', 'delivery_value':'/etc/passwd'}, {'category':'hosting', 'delivery_kind':'instructions'}, {'published':True, 'delivery_value':''}])
 def test_invalid_product_rejected(market, owner, changes):
     with pytest.raises(ValidationError):
-        market.save_product(owner, {'name':'Test product','category':'source', **changes})
+        market.save_product(owner, {'name':'Test product','category':'bot', **changes})
 
 
 def test_product_write_is_staff_scoped(market, paid, buyer):
     with pytest.raises(DomainError):
-        market.save_product(buyer, {'name':'Hacked product','category':'source'}, paid.id)
+        market.save_product(buyer, {'name':'Hacked product','category':'bot'}, paid.id)
     with pytest.raises(DomainError):
-        market.save_product(Actor(500, 999, administrator=True, owner=True), {'name':'Hacked product','category':'source'}, paid.id)
+        market.save_product(Actor(500, 999, administrator=True, owner=True), {'name':'Hacked product','category':'bot'}, paid.id)
 
 
 def test_database_reopen_persists(db, market, free, buyer):

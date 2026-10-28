@@ -7,7 +7,7 @@ class ProductInput(BaseModel):
     model_config = ConfigDict(extra='forbid', str_strip_whitespace=True)
     name: str = Field(min_length=2, max_length=120)
     description: str = Field(default='', max_length=4000)
-    category: Literal['template', 'source']
+    category: Literal['template', 'bot']
     price: int = Field(default=0, ge=0, le=100000000)
     currency: str = Field(default='INR', pattern=r'^[A-Z]{3}$')
     thumbnail: str = Field(default='', max_length=2000)
@@ -36,6 +36,9 @@ class ProductInput(BaseModel):
         return self
 
 
+LEGACY_CONFIG_KEYS = frozenset(['ai_enabled', 'automod_action', 'automod_enabled', 'automod_exempt_roles', 'block_invites', 'blocked_domains', 'caps_percent', 'level_channel', 'level_rewards', 'leveling_enabled', 'mention_limit', 'referral_points', 'reviews_allow_free', 'rewards_enabled', 'security_enabled', 'security_exempt_users', 'security_threshold', 'security_window', 'self_roles', 'spam_count', 'spam_window', 'xp_cooldown'])
+
+
 class GuildConfig(BaseModel):
     model_config = ConfigDict(extra='forbid')
     prefix: str = Field(default='!', min_length=1, max_length=5)
@@ -47,10 +50,12 @@ class GuildConfig(BaseModel):
     payment_roles: list[int] = Field(default_factory=list, max_length=20)
     ticket_category: int | None = None
     log_channel: int | None = None
+    shop_channel: int | None = None
+    giveaway_channel: int | None = None
+    restrict_rejoin: bool = False
     welcome_channel: int | None = None
     leave_channel: int | None = None
     auto_role: int | None = None
-    self_roles: list[int] = Field(default_factory=list, max_length=20)
     welcome_message: str = Field(default='Welcome {user} to {server}!', max_length=1000)
     leave_message: str = Field(default='{name} left {server}.', max_length=1000)
     upi_id: str = Field(default='', max_length=100, pattern=r'^$|^[\w.\-]+@[\w.\-]+$')
@@ -58,29 +63,8 @@ class GuildConfig(BaseModel):
     payee: str = Field(default='', max_length=100)
     currency: str = Field(default='INR', pattern=r'^[A-Z]{3}$')
     payment_instructions: str = Field(default='Pay the exact amount and upload your receipt. Staff will verify it manually.', max_length=1500)
-    automod_enabled: bool = False
-    automod_action: Literal['log', 'delete'] = 'log'
-    automod_exempt_roles: list[int] = Field(default_factory=list, max_length=20)
-    spam_count: int = Field(default=6, ge=3, le=30)
-    spam_window: int = Field(default=8, ge=3, le=60)
-    mention_limit: int = Field(default=8, ge=3, le=100)
-    block_invites: bool = False
-    caps_percent: int = Field(default=85, ge=50, le=100)
-    blocked_domains: list[str] = Field(default_factory=list, max_length=100)
-    security_enabled: bool = False
-    security_threshold: int = Field(default=4, ge=2, le=30)
-    security_window: int = Field(default=30, ge=10, le=300)
-    security_exempt_users: list[int] = Field(default_factory=list, max_length=100)
-    leveling_enabled: bool = False
-    xp_cooldown: int = Field(default=60, ge=15, le=3600)
-    level_channel: int | None = None
-    level_rewards: dict[str, int] = Field(default_factory=dict)
-    rewards_enabled: bool = False
-    referral_points: int = Field(default=10, ge=0, le=10000)
-    reviews_allow_free: bool = True
     free_claim_limit: int = Field(default=10, ge=1, le=1000)
     free_claim_cooldown: int = Field(default=3600, ge=0, le=31536000)
-    ai_enabled: bool = False
 
     @field_validator('emojis')
     @classmethod
@@ -93,20 +77,10 @@ class GuildConfig(BaseModel):
     def qr(cls, v):
         return safe_https(v) if v else v
 
-    @field_validator('blocked_domains')
-    @classmethod
-    def domains(cls, values):
-        import re
-        if any(not re.fullmatch(r'[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', v) for v in values):
-            raise ValueError('Enter plain domain names.')
-        return [v.lower() for v in values]
-
     @model_validator(mode='after')
     def discord_ids(self):
-        ids = self.staff_roles + self.payment_roles + self.self_roles + self.automod_exempt_roles + self.security_exempt_users + list(self.level_rewards.values())
-        ids += [x for x in (self.ticket_category,self.log_channel,self.welcome_channel,self.leave_channel,self.auto_role,self.level_channel) if x is not None]
+        ids = self.staff_roles + self.payment_roles
+        ids += [x for x in (self.ticket_category,self.log_channel,self.shop_channel,self.giveaway_channel,self.welcome_channel,self.leave_channel,self.auto_role) if x is not None]
         if any(not 0 < value < 2**63 for value in ids):
             raise ValueError('Discord IDs must be positive 64-bit integers.')
-        if any(not key.isdecimal() or not 1 <= int(key) <= 10000 for key in self.level_rewards):
-            raise ValueError('Reward levels must be integers from 1 to 10000.')
         return self

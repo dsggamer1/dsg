@@ -79,7 +79,7 @@ async def test_storefront_checkout_creates_one_free_order(db,core,market,free,bu
     assert view.products and view.previous.disabled and view.next_page.disabled
     assert len(view.card()) <= 6000
     product_select=next(c for c in view.children if isinstance(c,discord.ui.Select))
-    assert product_select.options[0].value==free.id
+    assert product_select.options[0].value==free.code
     checkout=CheckoutView(buyer.user_id,free)
     message=SimpleNamespace(edit=AsyncMock())
     interaction=SimpleNamespace(id=9999,guild_id=1000,client=bot,user=SimpleNamespace(id=200),response=SimpleNamespace(defer=AsyncMock()),followup=SimpleNamespace(send=AsyncMock()),message=message)
@@ -166,7 +166,7 @@ def test_price_input_rejects_unsafe_values(value):
         price_minor(value)
 
 
-@pytest.mark.parametrize('changes',[{'self_roles':[30]},{'auto_role':20},{'level_rewards':{'5':30}}])
+@pytest.mark.parametrize('changes',[{'auto_role':20}])
 def test_configuration_cannot_self_assign_staff_roles(core,owner,changes):
     with pytest.raises(DomainError,match='Staff and payment'):
         core.configure(owner,changes)
@@ -178,10 +178,6 @@ def test_staff_role_rejected_even_without_discord_permission_bits():
         safe_role(None,None,role,[30])
 
 
-def test_malformed_link_does_not_crash_automod():
-    from nex.services.automod import Automod
-    from nex.schemas import GuildConfig
-    assert Automod().inspect(1,2,'hello https://[invalid',0,GuildConfig().model_dump())==[]
 
 
 async def test_help_and_storefront_payloads_fit_discord_limits(db,core,tmp_path):

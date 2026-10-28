@@ -28,9 +28,10 @@ def test_archive_excludes_local_credentials_and_runtime_data(tmp_path):
         assert z.testzip() is None
         assert z.read('NEX_CODEX/.env')==(root/'.env.example').read_bytes()
         assert 'NEX_CODEX/main.py' in z.namelist()
+        assert not any('/dashboard/' in name or name.endswith(('automod.py','providers.py','nex-dashboard.service','nginx.conf')) for name in z.namelist())
         assert len([n for n in z.namelist() if n.startswith('NEX_CODEX/nex/assets/emojis/') and n.endswith('.png')])==49
         assert z.read('NEX_CODEX/nex/assets/emojis/nex_cart.png').startswith(b'\x89PNG\r\n\x1a\n')
-        assert len([n for n in z.namelist() if n.startswith('NEX_CODEX/nex/assets/help/') and n.endswith('.gif')])==4
+        assert len([n for n in z.namelist() if n.startswith('NEX_CODEX/nex/assets/help/') and n.endswith('.gif')])==5
         assert z.read('NEX_CODEX/nex/assets/help/home.gif').startswith(b'GIF89a')
         assert len([n for n in z.namelist() if n.startswith('NEX_CODEX/nex/assets/cards/') and n.endswith('.png')])==10
         assert z.read('NEX_CODEX/nex/assets/cards/shop.png').startswith(b'\x89PNG\r\n\x1a\n')

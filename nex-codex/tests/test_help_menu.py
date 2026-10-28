@@ -18,7 +18,7 @@ def test_each_help_file_is_a_bounded_gif(section):
     with closing(file):
         data=file.fp.read()
         assert data.startswith(b'GIF89a')
-        assert struct.unpack('<HH',data[6:10])==(900,660)
+        assert struct.unpack('<HH',data[6:10])==(900,820)
         assert len(data)<4*1024*1024
     assert file.fp.closed
 
@@ -59,8 +59,8 @@ async def test_category_changes_defer_then_replace_art_and_return_home(db,core,t
         await menu.callback(interaction)
         assert captures[-1][0].image.url=='attachment://nex_help.gif'
         assert [o.value for o in menu.options if o.default]==[section]
-    assert events==['defer','edit']*4
-    assert len({checksum for _,checksum in captures})==4
+    assert events==['defer','edit']*5
+    assert len({checksum for _,checksum in captures})==5
     assert 'Command center' in captures[-1][0].title
     assert len(captures[-1][0])<6000
     await bot.close()
@@ -112,19 +112,19 @@ async def test_buttons_and_dropdown_share_navigation(db,core,tmp_path):
     view.update_navigation('Home',menu.options)
     interaction=SimpleNamespace(response=SimpleNamespace(defer=AsyncMock()),edit_original_response=AsyncMock())
     assert view.previous.disabled and view.home.disabled and not view.next_page.disabled
-    for section in ['Utility','Commerce','Community']:
+    for section in ['Utility','Commerce','Community','Moderation']:
         await view.next_page.callback(interaction)
         assert view.current_section==section
         assert [o.value for o in menu.options if o.default]==[section]
         assert interaction.edit_original_response.await_args.kwargs['view'] is view
     assert view.next_page.disabled
     await view.previous.callback(interaction)
-    assert view.current_section=='Commerce' and not view.next_page.disabled
+    assert view.current_section=='Community' and not view.next_page.disabled
     await view.home.callback(interaction)
     assert view.current_section=='Home' and view.previous.disabled and view.home.disabled
-    menu._values=['Community']
+    menu._values=['Moderation']
     await menu.callback(interaction)
-    assert view.current_section=='Community' and view.next_page.disabled
+    assert view.current_section=='Moderation' and view.next_page.disabled
     view.stop()
     await bot.close()
 

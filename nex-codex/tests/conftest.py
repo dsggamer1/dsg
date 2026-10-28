@@ -40,7 +40,7 @@ def market(db, core, tmp_path):
 
 @pytest.fixture
 def paid(market, owner):
-    return market.save_product(owner, {'name': 'Test source', 'category': 'source', 'price': 49900, 'published': True, 'delivery_kind': 'instructions', 'delivery_value': 'Synthetic delivery instructions'})
+    return market.save_product(owner, {'name': 'Test source', 'category': 'bot', 'price': 49900, 'published': True, 'delivery_kind': 'instructions', 'delivery_value': 'Synthetic delivery instructions'})
 
 
 @pytest.fixture

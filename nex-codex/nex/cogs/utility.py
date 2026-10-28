@@ -1,4 +1,5 @@
 from contextlib import closing
+from typing import Literal
 import json
 import discord
 from discord.ext import commands
@@ -12,7 +13,7 @@ from ..utils.storefront import ShopView
 from ..security import DomainError
 from ..services.core import audit
 
-HELP_CATEGORIES = {'Utility': ('help', 'Welcome & announcements'), 'Commerce': ('shop', 'Shop & tickets'), 'Community': ('giveaway', 'Giveaways')}
+HELP_CATEGORIES = {'Utility': ('help', 'Welcome & announcements'), 'Commerce': ('shop', 'Shop & tickets'), 'Community': ('giveaway', 'Giveaways'), 'Moderation': ('settings', 'Moderation & roles')}
 
 
 def visible_commands(cog, owner, administrator=False):
@@ -26,7 +27,7 @@ def help_card(bot, owner, administrator, config, section='Home'):
         item = themed_embed(key, title, 'Use slash commands or your server prefix. <Brackets> are required; [brackets] are optional. Staff commands enforce permissions.', config=config)
         for command in visible_commands(cog, owner, administrator):
             access = ' · Owner' if command.extras.get('owner_only') else ' · Admin' if command.extras.get('admin_only') else ''
-            item.add_field(name=f'/{command.qualified_name}{access}', value=f'{command.help}\n`{command.name} {command.signature}`'[:1024], inline=False)
+            item.add_field(name=f'/{command.qualified_name}{access}', value=f'{command.help}\n`{command.name} {command.signature}`'[:190], inline=False)
         return item
     item = themed_embed('help', 'NEX CODEX • Command center', 'Your community, connected. Choose a category below for the commands and their usage.', config=config)
     for name, (key, title) in HELP_CATEGORIES.items():
@@ -329,6 +330,75 @@ class Utility(commands.Cog):
         else:
             detail += '\nTheme saved. Repost existing shop panels to refresh their buttons.'
         await ctx.send(embed=themed_embed('settings', 'Emoji setup • ' + ('Partial' if result['failure'] else 'Complete'), detail, config=self.bot.core.config(ctx.guild.id)), ephemeral=True)
+
+    @commands.hybrid_command(extras={'owner_only': True}, help='Set shop channel/branding and publish the persistent panel (owner).')
+    @owner_only()
+    @commands.guild_only()
+    async def shopsetup(self,ctx,channel:discord.TextChannel,title:str='NEX CODEX • Shop',description:str='Explore templates and bots.',image:str=''):
+        a=actor(ctx);a.require_owner()
+        if channel.guild.id!=ctx.guild.id:raise DomainError('Choose a channel in this server.')
+        self.bot.core.configure(a,{'shop_channel':channel.id,'shop_title':title,'shop_description':description,'shop_image':image})
+        commerce=self.bot.get_cog('Commerce')
+        await type(commerce).createshop.callback(commerce,ctx,channel)
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Set the channel for welcome, leave, logs, giveaways or shop (shop requires owner).')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def channelsetup(self,ctx,kind:Literal['welcome','leave','logs','giveaway','shop'],channel:discord.TextChannel):
+        a=actor(ctx);a.require_admin()
+        if kind=='shop':a.require_owner()
+        if channel.guild.id!=ctx.guild.id:raise DomainError('Choose a channel in this server.')
+        key={'logs':'log_channel','giveaway':'giveaway_channel'}.get(kind,kind+'_channel')
+        self.bot.core.configure(a,{key:channel.id})
+        await respond(ctx,'Channel saved',f'**{kind.title()}** → {channel.mention}')
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Configure welcome channel and message template.')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def welcomesetup(self,ctx,channel:discord.TextChannel,*,message:str='Welcome {user} to {server}!'):
+        await self.membership_message(ctx,'welcome',channel,message,True)
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Set leave message and optional kick-on-rejoin restriction; default disabled.')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def leavesetup(self,ctx,channel:discord.TextChannel=None,restrict_rejoin:bool=False,*,message:str=''):
+        a=actor(ctx);a.require_admin()
+        if restrict_rejoin and not ctx.guild.me.guild_permissions.kick_members:
+            raise DomainError('Give the bot Kick Members permission before enabling rejoin restriction.')
+        if channel and channel.guild.id!=ctx.guild.id:raise DomainError('Choose a channel in this server.')
+        changes={'restrict_rejoin':restrict_rejoin}
+        if channel:changes['leave_channel']=channel.id
+        if message:changes['leave_message']=message
+        self.bot.core.configure(a,changes)
+        await respond(ctx,'Leave setup saved','Kick on rejoin: **'+('Enabled' if restrict_rejoin else 'Disabled')+'**. Only departures recorded while enabled are tracked. Owners/admins/configured staff/bots are exempt. Use /rejoinallow to remove a block.')
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Remove a saved leave/rejoin restriction by Discord user ID.')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def rejoinallow(self,ctx,user_id:str):
+        if not user_id.isdecimal() or not 0<int(user_id)<2**63:raise DomainError('Use a numeric Discord user ID.')
+        from ..services.rejoin import clear
+        clear(self.bot,actor(ctx),int(user_id))
+        await respond(ctx,'Rejoin allowed',f'Removed the saved restriction for `{user_id}`.')
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Configure private ticket category and staff role.')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def ticketsetup(self,ctx,category:discord.CategoryChannel,staff_role:discord.Role):
+        a=actor(ctx);a.require_admin()
+        if category.guild.id!=ctx.guild.id or staff_role.guild.id!=ctx.guild.id or staff_role.is_default():
+            raise DomainError('Choose a category and a non-everyone staff role in this server.')
+        cfg=self.bot.core.config(ctx.guild.id)
+        self.bot.core.configure(a,{'ticket_category':category.id,'staff_roles':list(dict.fromkeys([*cfg['staff_roles'],staff_role.id]))})
+        await respond(ctx,'Tickets configured','Support and purchase tickets will be private to customers and configured staff/reviewers.')
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Set the channel used for new giveaways.')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def giveawaysetup(self,ctx,channel:discord.TextChannel):
+        if channel.guild.id!=ctx.guild.id:raise DomainError('Choose a channel in this server.')
+        self.bot.core.configure(actor(ctx),{'giveaway_channel':channel.id})
+        await respond(ctx,'Giveaway channel saved',f'New /giveaway events will be posted in {channel.mention}.')
 
     @commands.command(hidden=True)
     @owner_only()

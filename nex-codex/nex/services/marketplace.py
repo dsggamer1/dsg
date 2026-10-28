@@ -1,5 +1,5 @@
 from datetime import timedelta
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from ..models import Product, Order, Payment, Entitlement, Hosting, Restriction, now
 from ..schemas import ProductInput
 from ..security import DomainError, safe_https, product_path
@@ -10,12 +10,34 @@ class Marketplace:
     def __init__(self, db, product_root):
         self.db, self.product_root = db, product_root
 
+    @staticmethod
+    def resolve(session, guild_id, identifier):
+        return session.scalar(select(Product).where(Product.guild_id==guild_id, or_(Product.id==identifier,Product.code==identifier.lower())))
+
+    def change_code(self, actor, identifier, new_code):
+        import re
+        actor.require_owner()
+        new_code=new_code.lower().strip()
+        if not re.fullmatch(r'[a-z0-9][a-z0-9_-]{2,15}',new_code):
+            raise DomainError('Use 3–16 lowercase letters, numbers, hyphens or underscores.')
+        with self.db.transaction() as s:
+            product=self.resolve(s,actor.guild_id,identifier)
+            if not product:
+                raise DomainError('Product not found.')
+            duplicate=s.scalar(select(Product).where(Product.guild_id==actor.guild_id,Product.code==new_code,Product.id!=product.id))
+            if duplicate:
+                raise DomainError('This product ID is already in use.')
+            old=product.code
+            product.code=new_code
+            audit(s,actor,'product.id',product.id,old=old,new=new_code)
+            return product
+
     def save_product(self, actor, data, product_id=None):
         actor.require_owner()
         data = ProductInput.model_validate(data).model_dump()
         with self.db.transaction() as s:
             actor.require_owner()
-            product = s.get(Product, product_id) if product_id else Product(guild_id=actor.guild_id)
+            product = self.resolve(s, actor.guild_id, product_id) if product_id else Product(guild_id=actor.guild_id)
             if product is None or product.guild_id != actor.guild_id:
                 raise DomainError('Product not found.')
             if data['published'] and data['delivery_kind'] == 'file':
@@ -31,7 +53,7 @@ class Marketplace:
         if not 1 <= page <= 10000:
             raise DomainError('Choose a page from 1 to 10000.')
         with self.db.sessions() as s:
-            statement = select(Product).where(Product.category.in_(['template', 'source']))
+            statement = select(Product).where(Product.category.in_(['template', 'bot']))
             if not staff:
                 statement = statement.where(Product.published.is_(True), Product.archived.is_(False))
             if guild_id is not None:
@@ -46,13 +68,17 @@ class Marketplace:
         if not 1 <= len(request_key) <= 80:
             raise DomainError('Invalid request identifier.')
         with self.db.transaction() as s:
+            p = self.resolve(s, actor.guild_id, product_id)
+            if not p:
+                raise DomainError('This product is unavailable.')
+            product_id = p.id
             existing = s.scalar(select(Order).where(Order.guild_id == actor.guild_id, Order.user_id == actor.user_id, Order.request_key == request_key))
             if existing:
                 if existing.product_id != product_id:
                     raise DomainError('Request identifier already used.')
                 return existing
             p = s.get(Product, product_id)
-            if not p or p.category not in ('template', 'source') or p.guild_id != actor.guild_id or not p.published or p.archived or not p.available:
+            if not p or p.category not in ('template', 'bot') or p.guild_id != actor.guild_id or not p.published or p.archived or not p.available:
                 raise DomainError('This product is unavailable.')
             if expected_terms is not None and (p.price, p.currency, p.terms, p.name) != expected_terms:
                 raise DomainError('Product terms changed. Please confirm the updated product.')

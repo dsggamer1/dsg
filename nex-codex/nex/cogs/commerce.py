@@ -4,8 +4,8 @@ import io
 import json
 import discord
 from discord.ext import commands
-from sqlalchemy import select, func
-from ..models import Order, Ticket, Review
+from sqlalchemy import select
+from ..models import Order, Ticket
 from ..security import DomainError
 from ..utils.discord import actor, respond, embed, confirm, price_minor, owner_only
 from ..services.core import audit
@@ -28,7 +28,7 @@ class Commerce(commands.Cog):
     async def createshop(self, ctx, channel: discord.TextChannel = None):
         a = actor(ctx)
         a.require_owner()
-        channel = channel or ctx.channel
+        channel = channel or ctx.guild.get_channel(self.bot.core.config(ctx.guild.id)['shop_channel']) or ctx.channel
         if channel.guild.id != ctx.guild.id:
             raise DomainError('Choose a channel in this server.')
         cfg = self.bot.core.config(ctx.guild.id)
@@ -42,34 +42,32 @@ class Commerce(commands.Cog):
 
     @commands.hybrid_command(help='Browse templates and bot source code. Filter with category or search.')
     @commands.guild_only()
-    async def shop(self, ctx, category: str = '', search: str = '', page: int = 1):
-        view = ShopView(ctx.author.id, self.bot, ctx.guild.id, category, search, page)
+    async def shop(self, ctx, category: Literal['template', 'bot'] = None, search: str = '', page: int = 1):
+        view = ShopView(ctx.author.id, self.bot, ctx.guild.id, category or '', search, page)
         await send_card(ctx.send, view.card(), key='shop', channel=ctx.channel, view=view)
 
-    @commands.hybrid_command(help='Inspect product terms, details and rating.')
+    @commands.hybrid_command(help='Inspect product details, price and terms.')
     @commands.guild_only()
     async def product(self, ctx, product_id: str):
         from ..models import Product
         with self.bot.db.sessions() as s:
-            p = s.get(Product, product_id)
-            if not p or p.category not in ('template', 'source') or p.guild_id != ctx.guild.id or not p.published or p.archived:
+            p = self.bot.market.resolve(s, ctx.guild.id, product_id)
+            if not p or p.category not in ('template', 'bot') or p.guild_id != ctx.guild.id or not p.published or p.archived:
                 raise DomainError('Product not found.')
-            rating = s.scalar(select(func.avg(Review.rating)).where(Review.product_id == p.id, Review.hidden.is_(False)))
         cfg = self.bot.core.config(ctx.guild.id)
         item = product_embed(p, cfg)
-        item.add_field(name='Customer rating', value=f'{rating:.1f}/5' if rating else 'Be the first to leave a review.')
         await send_card(ctx.send, item, key='product', channel=ctx.channel, view=CheckoutView(ctx.author.id, p, cfg))
 
-    @commands.hybrid_command(name='addproduct', aliases=['productadd'], extras={'owner_only': True}, help='Create a template/source draft (bot owner). Price example: 499.00.')
+    @commands.hybrid_command(name='addproduct', aliases=['productadd'], extras={'owner_only': True}, help='Create a template/bot draft (bot owner). Price example: 499.00.')
     @owner_only()
     @commands.guild_only()
-    async def productadd(self, ctx, name: str, category: Literal['template', 'source'], price: str, delivery: str, description: str = ''):
+    async def productadd(self, ctx, name: str, category: Literal['template', 'bot'], price: str, delivery: str, description: str = ''):
         a = actor(ctx)
         cfg = self.bot.core.config(ctx.guild.id)
         a.require_owner()
         kind = 'link' if delivery.startswith('https://') else 'instructions'
         p = self.bot.market.save_product(a, {'name': name, 'category': category, 'price': price_minor(price), 'currency': cfg['currency'], 'delivery_kind': kind, 'delivery_value': delivery, 'description': description})
-        await respond(ctx, 'Product draft created', f'**{p.name}** · {p.currency} {p.price/100:,.2f}\nProduct ID: `{p.id}`\nSet terms: `/productedit product_id: {p.id} field: terms value: YOUR_TERMS`\nPublish: `/productpublish product_id: {p.id} published: true`\nThen `/createshop`. Use `/setup` → Add products for examples.')
+        await respond(ctx, 'Product draft created', f'**{p.name}** · {p.currency} {p.price/100:,.2f}\nProduct ID: `{p.code}`\nSet terms: `/productedit product_id: {p.code} field: terms value: YOUR_TERMS`\nPublish: `/productpublish product_id: {p.code} published: true`\nThen `/createshop`. Use `/setup` → Add products for examples.')
 
     @commands.hybrid_command(extras={'owner_only': True}, help='Edit a product field (bot owner). Prices use currency units; other values use JSON.')
     @owner_only()
@@ -81,8 +79,8 @@ class Commerce(commands.Cog):
         if field not in ProductInput.model_fields:
             raise DomainError('Unknown product field. Use name, description, price, terms, thumbnail, delivery_kind, delivery_value, published, archived or available.')
         with self.bot.db.sessions() as session:
-            product = session.get(Product, product_id)
-            if not product or product.guild_id != ctx.guild.id or product.category not in ('template', 'source'):
+            product = self.bot.market.resolve(session, ctx.guild.id, product_id)
+            if not product or product.guild_id != ctx.guild.id or product.category not in ('template', 'bot'):
                 raise DomainError('Product not found.')
             data = {key: getattr(product, key) for key in ProductInput.model_fields}
         if field == 'price':
@@ -103,13 +101,37 @@ class Commerce(commands.Cog):
         a = actor(ctx)
         a.require_owner()
         with self.bot.db.sessions() as session:
-            p = session.get(Product, product_id)
-            if not p or p.guild_id != ctx.guild.id or p.category not in ('template', 'source'):
+            p = self.bot.market.resolve(session, ctx.guild.id, product_id)
+            if not p or p.guild_id != ctx.guild.id or p.category not in ('template', 'bot'):
                 raise DomainError('Product not found.')
             data = {key: getattr(p, key) for key in ProductInput.model_fields}
         data['published'] = published
         self.bot.market.save_product(a, data, product_id)
         await respond(ctx, 'Storefront updated', f'**{p.name}** is now {"published" if published else "unpublished"}. Use /shop to browse the collection.')
+
+    @commands.hybrid_command(extras={'owner_only': True}, help='Change a product’s short public ID without changing old orders (owner).')
+    @owner_only()
+    @commands.guild_only()
+    async def productid(self, ctx, product_id: str, new_id: str):
+        product=self.bot.market.change_code(actor(ctx),product_id,new_id)
+        await respond(ctx,'Product ID updated',f'**{product.name}** → `{product.code}`. Existing orders are preserved.')
+
+    async def product_choices(self, interaction, current):
+        if not interaction.guild_id:
+            return []
+        owner=interaction.user.id in self.bot.config.owner_ids
+        # Search the whole guild catalogue, including owner drafts, not only its first page.
+        from ..models import Product
+        with self.bot.db.sessions() as session:
+            query=select(Product).where(Product.guild_id==interaction.guild_id,Product.category.in_(['template','bot']))
+            if not owner:
+                query=query.where(Product.published.is_(True),Product.archived.is_(False))
+            if current:
+                from sqlalchemy import or_
+                term='%'+current[:80]+'%'
+                query=query.where(or_(Product.name.ilike(term),Product.code.ilike(term)))
+            rows=list(session.scalars(query.order_by(Product.name).limit(25)))
+        return [discord.app_commands.Choice(name=(f'{p.name} · {p.code}'+(' · Draft' if not p.published else ''))[:100],value=p.code) for p in rows]
 
     @commands.hybrid_command(help='Create a confirmed order or claim a free product.')
     @commands.guild_only()
@@ -117,14 +139,14 @@ class Commerce(commands.Cog):
     async def buy(self, ctx, product_id: str):
         from ..models import Product
         with self.bot.db.sessions() as s:
-            p = s.get(Product, product_id)
-            if not p or p.category not in ('template', 'source') or p.guild_id != ctx.guild.id or not p.published or p.archived:
+            p = self.bot.market.resolve(s, ctx.guild.id, product_id)
+            if not p or p.category not in ('template', 'bot') or p.guild_id != ctx.guild.id or not p.published or p.archived:
                 raise DomainError('Product not found.')
             shown = (p.price, p.currency, p.terms, p.name)
         if not await confirm(ctx, f'{p.name}\n{p.currency} {p.price/100:.2f}\n{p.terms[:2000]}\nConfirm this order?'):
             return
         with self.bot.db.sessions() as s:
-            current = s.get(Product, product_id)
+            current = self.bot.market.resolve(s, ctx.guild.id, product_id)
             if not current or (current.price, current.currency, current.terms, current.name) != shown:
                 raise DomainError('Product terms changed. Please start again and confirm the updated terms.')
         a = actor(ctx)
@@ -249,4 +271,7 @@ class Commerce(commands.Cog):
 
 
 async def setup(bot):
-    await bot.add_cog(Commerce(bot))
+    cog=Commerce(bot)
+    for name in ('product','productedit','productpublish','productid','buy'):
+        getattr(cog,name).app_command.autocomplete('product_id')(cog.product_choices)
+    await bot.add_cog(cog)

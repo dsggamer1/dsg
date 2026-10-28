@@ -1,13 +1,13 @@
-from datetime import timedelta
-from sqlalchemy import select, func
-from ..models import Guild, Audit, Premium, Restriction, now
-from ..schemas import GuildConfig
+from sqlalchemy import select
+from ..models import Guild, Audit, Restriction
+from ..schemas import GuildConfig, LEGACY_CONFIG_KEYS
 from ..security import DomainError
 
 
 def config(session, guild_id):
     row = session.get(Guild, guild_id)
-    return GuildConfig.model_validate(row.settings if row else {}).model_dump()
+    saved = row.settings if row else {}
+    return GuildConfig.model_validate({key: value for key, value in saved.items() if key not in LEGACY_CONFIG_KEYS}).model_dump()
 
 
 def audit(session, actor, action, target='', **details):
@@ -26,11 +26,11 @@ class Core:
         actor.require_admin()
         with self.db.transaction() as s:
             value = GuildConfig.model_validate(config(s, actor.guild_id) | changes).model_dump()
-            if actor.guild_id in value['staff_roles'] + value['payment_roles'] + value['self_roles']:
-                raise DomainError('The everyone role cannot be used for staff, payment review or self-service.')
-            automatic_roles = set(value['self_roles']) | set(value['level_rewards'].values()) | {value['auto_role']}
+            if actor.guild_id in value['staff_roles'] + value['payment_roles']:
+                raise DomainError('The everyone role cannot be used for staff or payment review.')
+            automatic_roles = {value['auto_role']}
             if automatic_roles.intersection(value['staff_roles'] + value['payment_roles']):
-                raise DomainError('Staff and payment roles cannot be self-service, auto-role or level rewards.')
+                raise DomainError('Staff and payment roles cannot be auto-role rewards.')
             row = s.get(Guild, actor.guild_id)
             if row:
                 row.settings = value
@@ -38,28 +38,6 @@ class Core:
                 s.add(Guild(id=actor.guild_id, settings=value))
             audit(s, actor, 'configuration.update', fields=list(changes))
         return value
-
-    def premium(self, actor, user_id, plan, days=None, revoke=False, extend=False):
-        actor.require(self.config(actor.guild_id))
-        if not plan or len(plan) > 50 or days is not None and not 1 <= days <= 36500:
-            raise DomainError('Use a plan name and 1–36500 days, or lifetime.')
-        with self.db.transaction() as s:
-            row = s.scalar(select(Premium).where(Premium.guild_id == actor.guild_id, Premium.user_id == user_id))
-            if not row:
-                row = Premium(guild_id=actor.guild_id, user_id=user_id, plan=plan)
-                s.add(row)
-            if extend and row.active and row.expires_at is None:
-                raise DomainError('Lifetime access does not need extending.')
-            base = max(row.expires_at or now(), now()) if extend else now()
-            row.plan, row.active = plan, not revoke
-            row.expires_at = base + timedelta(days=days) if days else None
-            audit(s, actor, 'premium.revoke' if revoke else 'premium.grant', user_id, plan=plan, days=days)
-            return row
-
-    def has_premium(self, guild_id, user_id):
-        with self.db.sessions() as s:
-            row = s.scalar(select(Premium).where(Premium.guild_id == guild_id, Premium.user_id == user_id))
-            return bool(row and row.active and (row.expires_at is None or row.expires_at > now()))
 
     def restrict(self, actor, user_id, reason, active=True):
         actor.require(self.config(actor.guild_id))

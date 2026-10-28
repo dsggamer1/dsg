@@ -53,7 +53,7 @@ class NexBot(commands.Bot):
         self.db.initialize()
         if self.config.auto_load_emojis:
             await self.load_startup_emojis()
-        for extension in ('utility', 'commerce', 'community', 'events'):
+        for extension in ('utility', 'commerce', 'community', 'moderation', 'events'):
             await self.load_extension('nex.cogs.' + extension)
         if self.config.sync_commands:
             await self.publish_commands()

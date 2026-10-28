@@ -36,7 +36,7 @@ with zipfile.ZipFile(args.output, 'w', zipfile.ZIP_DEFLATED) as archive:
     archive.writestr('NEX_CODEX/.env', example.read_text())
 with zipfile.ZipFile(args.output) as archive:
     assert archive.testzip() is None
-    required = {'README.md','PROJECT_STATE.md','CHANGELOG.md','requirements.txt','requirements.lock','.env.example','.env','main.py','nex/bot.py','nex/dashboard/app.py','nex/models.py'}
+    required = {'README.md','PROJECT_STATE.md','CHANGELOG.md','requirements.txt','requirements.lock','.env.example','.env','main.py','nex/bot.py','nex/models.py'}
     names = set(archive.namelist())
     assert all('NEX_CODEX/'+name in names for name in required)
 print(f'Packaged {len(files)+1} files into {args.output.name}')

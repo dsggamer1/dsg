@@ -1,13 +1,14 @@
 """Rebuild bundled UI artwork (optional build tool: Pillow; not needed to run the bot)."""
 from pathlib import Path
 import math
+import ast
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / 'nex' / 'assets' / 'help'
 ICONS = ROOT / 'nex' / 'assets' / 'emojis'
 FONT_ROOT = Path('/usr/share/fonts/truetype/dejavu')
-WIDTH, HEIGHT = 900, 660
+WIDTH, HEIGHT = 900, 820
 PAGES = {
  'home': ('Command center', 'A little more connection. A lot more possibility.', [
   ('welcome','Welcome & leave','A warm hello. A thoughtful goodbye.'),
@@ -38,7 +39,8 @@ PAGES = {
   ('loading','Reroll','Staff can draw again after it ends.'),
   ('clipboard','Keep the history','Entries & outcomes stay recorded.')]),
 }
-NAV = [('home','Home','logo'),('utility','Community','welcome'),('commerce','Shop & tickets','cart'),('community','Giveaways','gift')]
+PAGES['moderation'] = ('Moderation & roles', 'Clear controls. Accountable decisions.', [('ban','Kick & ban','Confirmation and role hierarchy.'),('warning','Warnings','Persistent cases and timestamps.'),('clock','Timeout','Minutes, or 0 to remove.'),('user','Give & take roles','Safe roles below your hierarchy.'),('leave','Rejoin restriction','Optional; owner/admin setup.'),('clipboard','Case history','Saved moderator and reason.')])
+NAV = [('home','Home','logo'),('utility','Community','welcome'),('commerce','Shop & tickets','cart'),('community','Giveaways','gift'),('moderation','Moderation','shield')]
 
 
 def font(size, bold=False):
@@ -51,8 +53,9 @@ def icon(name,size):
 
 
 FRAMES = 32
-ACCENTS = {'home': (56, 207, 239), 'utility': (65, 219, 207), 'commerce': (95, 165, 255), 'community': (133, 166, 255)}
+ACCENTS = {'home': (56, 207, 239), 'utility': (65, 219, 207), 'commerce': (95, 165, 255), 'community': (133, 166, 255), 'moderation': (94, 185, 235)}
 HEROES = {
+ 'moderation': ('Keep it welcoming.', 'Keep it fair.', 'Moderation, roles and opt-in rejoin controls.'),
  'home': ('A better place', 'to belong.', 'Your community. Your collection. Your NEX CODEX.'),
  'utility': ('Make every', 'hello count.', 'Welcome people in. Share what matters.'),
  'commerce': ('Your next idea', 'starts here.', 'Templates. Source code. A place to start building.'),
@@ -83,13 +86,13 @@ def render(key,index):
  # Fine grid, recessed border and a floating brand header.
  for x in range(40,880,40): d.line((x,90,x,550),fill=(20,31,48))
  for y in range(110,550,40): d.line((28,y,872,y),fill=(20,31,48))
- d.rounded_rectangle((16,16,883,643),radius=28,outline=(43,70,91),width=1)
+ d.rounded_rectangle((16,16,883,803),radius=28,outline=(43,70,91),width=1)
  d.line((43,16,857,16),fill=(*accent,180),width=1)
  im.alpha_composite(icon('logo',40),(35,31))
  d.text((87,35),'NEX CODEX',font=font(23,True),fill=(222,244,255))
  d.text((89,64),'YOUR COMMUNITY, CONNECTED',font=font(9,True),fill=(122,165,191))
  d.rounded_rectangle((746,36,859,70),radius=16,fill=(15,33,52),outline=(49,85,108))
- d.text((773,43),f'{list(PAGES).index(key)+1:02} / 04',font=font(15,True),fill=accent)
+ d.text((773,43),f'{list(PAGES).index(key)+1:02} / 05',font=font(15,True),fill=accent)
  # Hero: intentionally generous text sizes; live command text sits outside the GIF.
  line1,line2,subtitle=HEROES[key]
  d.text((38,102),'THE NEX CODEX COMMAND CENTER',font=font(11,True),fill=accent)
@@ -121,15 +124,32 @@ def render(key,index):
   px=38+(n*137)%820+3*math.sin(phase+n)
   py=92+(n*67)%470+3*math.cos(phase+n)
   d.ellipse((px,py,px+1,py+1),fill=(75,130,159))
- d.text((38,550),'Choose a category below. Make yourself at home.',font=font(13),fill=(137,171,195))
- d.rounded_rectangle((35,581,864,628),radius=16,fill=(10,24,40),outline=(36,63,85))
+ # Command labels come from the actual registered command definitions.
+ files={'home':['utility','commerce','community','moderation'],'utility':['utility'],'commerce':['commerce'],'community':['community'],'moderation':['moderation']}[key]
+ labels=[]
+ for module in files:
+  tree=ast.parse((ROOT/'nex/cogs'/f'{module}.py').read_text())
+  for node in ast.walk(tree):
+   if not isinstance(node,ast.AsyncFunctionDef):continue
+   for deco in node.decorator_list:
+    if isinstance(deco,ast.Call) and isinstance(deco.func,ast.Attribute) and deco.func.attr=='hybrid_command':
+     extras=next((ast.literal_eval(kw.value) for kw in deco.keywords if kw.arg=='extras'),{})
+     if extras.get('owner_only') or extras.get('admin_only'):continue
+     name=next((kw.value.value for kw in deco.keywords if kw.arg=='name'),node.name)
+     labels.append('/'+name)
+ labels=sorted(labels)
+ d.text((38,548),'COMMAND INDEX  /  Setup commands appear below for authorized users',font=font(11,True),fill=accent)
+ columns=4 if key=='home' else 3
+ for n,label in enumerate(labels):
+  x=40+(n%columns)*(820//columns);y=574+(n//columns)*15
+  d.text((x,y),label,font=font(13,True),fill=(176,209,229))
+ d.rounded_rectangle((35,748,864,795),radius=16,fill=(10,24,40),outline=(36,63,85))
  for n,(target,label,glyph) in enumerate(NAV):
-  x=43+n*204
+  x=43+n*164
   selected=target==key
-  if selected:
-   d.rounded_rectangle((x,588,x+195,621),radius=11,fill=(21,52,74),outline=accent)
-  im.alpha_composite(icon(glyph,25),(x+8,592)); d=ImageDraw.Draw(im)
-  d.text((x+43,595),label,font=font(14,True),fill=(187,231,250) if selected else (116,150,177))
+  if selected:d.rounded_rectangle((x,755,x+158,788),radius=11,fill=(21,52,74),outline=accent)
+  im.alpha_composite(icon(glyph,23),(x+5,760));d=ImageDraw.Draw(im)
+  d.text((x+34,763),label,font=font(11,True),fill=(187,231,250) if selected else (116,150,177))
  return im.convert('RGB')
 
 

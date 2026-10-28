@@ -4,7 +4,7 @@ from pathlib import Path
 import discord
 
 HELP_ROOT = Path(__file__).resolve().parents[1] / 'assets' / 'help'
-HELP_FILES = {'Home': 'home.gif', 'Utility': 'utility.gif', 'Commerce': 'commerce.gif', 'Community': 'community.gif'}
+HELP_FILES = {'Home': 'home.gif', 'Utility': 'utility.gif', 'Commerce': 'commerce.gif', 'Community': 'community.gif', 'Moderation': 'moderation.gif'}
 
 
 def help_file(section):

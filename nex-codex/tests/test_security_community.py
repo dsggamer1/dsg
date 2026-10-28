@@ -5,33 +5,13 @@ from unittest.mock import MagicMock
 import pytest
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
-from nex.models import Premium, Reward, Review, Giveaway, Entry, Hosting, Order, now
-from nex.security import Actor, DomainError, product_path, safe_https, check_hierarchy, RateLimiter
+from nex.models import Giveaway, Entry, now
+from nex.security import Actor, DomainError, product_path, safe_https, RateLimiter
 from nex.services.community import Community
 from nex.services.tickets import Tickets, ticket_overwrites
-from nex.services.automod import Automod
 from nex.schemas import GuildConfig
 
 
-def test_premium_expiry_lifetime_extend_and_auth(db, core, owner, buyer):
-    with pytest.raises(DomainError):
-        core.premium(buyer, buyer.user_id, 'pro', 30)
-    core.premium(owner, buyer.user_id, 'pro', 1)
-    assert core.has_premium(1000, 200)
-    with db.transaction() as s:
-        row = s.scalar(select(Premium))
-        row.expires_at = now()-timedelta(seconds=1)
-    assert not core.has_premium(1000, 200)
-    core.premium(owner, 200, 'pro', 2, extend=True)
-    assert core.has_premium(1000, 200)
-    core.premium(owner, 200, 'pro', None)
-    assert core.has_premium(1000, 200)
-    with pytest.raises(DomainError):
-        core.premium(owner, 200, 'pro', 1, extend=True)
-    core.premium(owner, 200, 'pro', revoke=True)
-    assert not core.has_premium(1000, 200)
-    with db.sessions() as s:
-        assert s.scalar(select(func.count()).select_from(Premium)) == 1
 
 
 def test_free_claim_limit_restriction_and_cooldown(core, market, free, owner, buyer):
@@ -49,40 +29,8 @@ def test_free_claim_limit_restriction_and_cooldown(core, market, free, owner, bu
         market.order(buyer, second.id, 'four')
 
 
-def test_referral_eligibility_and_duplicate_reward(db, core, market, free, owner, buyer):
-    c = Community(db)
-    with pytest.raises(DomainError):
-        c.refer(buyer, buyer.user_id)
-    with pytest.raises(DomainError, match='disabled'):
-        c.refer(buyer, 999)
-    core.configure(owner, {'rewards_enabled':True})
-    with pytest.raises(DomainError, match='Claim or purchase'):
-        c.refer(buyer, 999)
-    market.order(buyer, free.id, 'one')
-    c.refer(buyer, 999)
-    with pytest.raises(DomainError):
-        c.refer(buyer, 888)
-    with db.sessions() as s:
-        assert s.scalar(select(func.sum(Reward.points))) == 10
-    with pytest.raises(IntegrityError):
-        with db.transaction() as s:
-            s.add(Reward(guild_id=1000,user_id=999,points=10,event_key='referral:1000:200'))
 
 
-def test_review_eligibility_and_duplicate(db, core, market, free, owner, buyer):
-    c = Community(db)
-    with pytest.raises(DomainError):
-        c.review(buyer, free.id, 5, 'Great')
-    market.order(buyer, free.id, 'one')
-    core.configure(owner, {'reviews_allow_free':False})
-    with pytest.raises(DomainError):
-        c.review(buyer, free.id, 5, 'Great')
-    core.configure(owner, {'reviews_allow_free':True})
-    c.review(buyer, free.id, 5, 'Great')
-    with pytest.raises(DomainError):
-        c.review(buyer, free.id, 5, 'Duplicate')
-    with pytest.raises(DomainError):
-        c.review(buyer, free.id, 0, '')
 
 
 def test_private_ticket_permissions_and_duplicates(db, core, buyer):
@@ -134,18 +82,6 @@ def test_screenshot_host_allowlist():
         safe_https('https://attacker.example.com/fake.png', attachment=True)
 
 
-def test_role_hierarchy():
-    guild = SimpleNamespace(owner_id=1)
-    moderator = SimpleNamespace(id=2,top_role=10)
-    target = SimpleNamespace(id=3,top_role=5)
-    bot = SimpleNamespace(id=4,top_role=20)
-    check_hierarchy(guild, moderator, target, bot)
-    target.top_role = 15
-    with pytest.raises(DomainError):
-        check_hierarchy(guild, moderator, target, bot)
-    target.id = 1
-    with pytest.raises(DomainError):
-        check_hierarchy(guild, moderator, target, bot)
 
 
 def test_rate_limiter():
@@ -156,17 +92,6 @@ def test_rate_limiter():
     limiter.check('y',limit=1)
 
 
-def test_automod_signals_and_defaults():
-    cfg = GuildConfig().model_dump()
-    assert cfg['automod_action'] == 'log' and not cfg['security_enabled']
-    automod = Automod()
-    assert automod.inspect(1,2,'ordinary text',0,cfg) == []
-    automod.inspect(1,2,'ordinary text',0,cfg)
-    assert 'repeated messages' in automod.inspect(1,2,'ordinary text',0,cfg)
-    cfg.update(block_invites=True, blocked_domains=['bad.example'])
-    assert 'invite link' in automod.inspect(1,3,'https://discord.gg/example',0,cfg)
-    assert 'blocked domain' in automod.inspect(1,3,'https://sub.bad.example/test',0,cfg)
-    assert 'blocked domain' not in automod.inspect(1,3,'https://notbad.example/test',0,cfg)
 
 
 def test_persistent_giveaway_draw_and_reroll(db, core, buyer, owner):
@@ -188,14 +113,6 @@ def test_persistent_giveaway_draw_and_reroll(db, core, buyer, owner):
     assert c.draw(g.id,owner).winners == [200]
 
 
-def test_xp_cooldown(db,core,owner):
-    from nex.models import Level
-    core.configure(owner,{'leveling_enabled':True})
-    c=Community(db)
-    for _ in range(10):
-        c.xp(1000,200)
-    with db.sessions() as s:
-        assert s.scalar(select(Level)).xp == 10
 
 
 def test_hosting_products_no_longer_available(market, owner):

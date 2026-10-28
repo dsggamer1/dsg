@@ -21,7 +21,7 @@ admin=Actor(100,1000,administrator=True,owner=True)
 buyer=Actor(200,1000)
 Core(db).configure(admin,{'upi_id':'synthetic@example','qr_url':'https://example.com/synthetic-qr.png','payee':'Synthetic test fixture'})
 market=Marketplace(db,Path('/tmp'))
-product=market.save_product(admin,{'name':'PostgreSQL test product','category':'source','published':True,'price':1000,'delivery_value':'Synthetic delivery'})
+product=market.save_product(admin,{'name':'PostgreSQL test product','category':'bot','published':True,'price':1000,'delivery_value':'Synthetic delivery'})
 order=market.order(buyer,product.id,str(uuid.uuid4()))
 market.submit_payment(buyer,order.id,'https://cdn.discordapp.com/attachments/1/2/test.png')
 def approve(_):

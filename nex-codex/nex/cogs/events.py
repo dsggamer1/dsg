@@ -1,14 +1,15 @@
 import logging
 import discord
 from discord.ext import commands, tasks
-from sqlalchemy import select, delete
-from ..models import Entitlement, Giveaway, Reminder, Heartbeat, OAuthState, WebSession, now
+from sqlalchemy import select
+from ..models import Entitlement, Giveaway, Heartbeat, now
 from ..security import Actor, DomainError
 from ..services.core import audit
 from ..utils.discord import embed, safe_role
 from ..utils.theme import themed_embed
 from ..utils.cards import send_card
 from ..utils.guides import IntroView
+from ..services import rejoin
 
 
 class Events(commands.Cog):
@@ -57,6 +58,13 @@ class Events(commands.Cog):
     @commands.Cog.listener()
     async def on_member_join(self, member):
         cfg = self.bot.core.config(member.guild.id)
+        try:
+            enforced = await rejoin.enforce(self.bot,member,cfg)
+        except discord.HTTPException:
+            enforced = None
+        if enforced is not False:
+            await self.log(member.guild, 'Rejoin restriction', f'User {member.id}: '+('kicked' if enforced else 'kick unavailable; check permissions/hierarchy'))
+            if enforced:return
         with self.bot.db.transaction() as s:
             audit(s, Actor(member.id, member.guild.id), 'member.join', member.id)
         channel = member.guild.get_channel(cfg['welcome_channel'])
@@ -82,6 +90,7 @@ class Events(commands.Cog):
     @commands.Cog.listener()
     async def on_member_remove(self, member):
         cfg = self.bot.core.config(member.guild.id)
+        rejoin.remember(self.bot,member,cfg)
         with self.bot.db.transaction() as s:
             count = len(list(s.scalars(select(Entitlement.id).where(Entitlement.guild_id == member.guild.id, Entitlement.user_id == member.id))))
             audit(s, Actor(member.id, member.guild.id), 'member.leave', member.id, entitlement_count=count, enforcement='none')
@@ -111,11 +120,8 @@ class Events(commands.Cog):
                 h = Heartbeat(name='bot')
                 s.add(h)
             h.updated_at, h.details = now(), {'guilds': len(self.bot.guilds), 'latency_ms': round(self.bot.latency*1000) if self.bot.is_ready() else None}
-            s.execute(delete(OAuthState).where(OAuthState.expires_at < now()))
-            s.execute(delete(WebSession).where(WebSession.expires_at < now()))
         with self.bot.db.sessions() as s:
             due = list(s.scalars(select(Giveaway).where(Giveaway.state == 'open', Giveaway.ends_at <= now()).limit(50)))
-            reminders = list(s.scalars(select(Reminder).where(Reminder.sent.is_(False), Reminder.due_at <= now()).limit(50)))
         for giveaway in due:
             self.bot.community.draw(giveaway.id)
         with self.bot.db.sessions() as s:
@@ -129,14 +135,6 @@ class Events(commands.Cog):
                     continue
                 with self.bot.db.transaction() as s:
                     s.get(Giveaway, giveaway.id).announced = True
-        for reminder in reminders:
-            try:
-                user = self.bot.get_user(reminder.user_id) or await self.bot.fetch_user(reminder.user_id)
-                await user.send(embed=embed('Your reminder', reminder.text))
-            except discord.HTTPException:
-                continue
-            with self.bot.db.transaction() as s:
-                s.get(Reminder, reminder.id).sent = True
 
 
 async def setup(bot):

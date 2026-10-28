@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.7.0 — 2026-10-28
+
+- Add short editable public product codes and scoped product-name autocomplete. Keep immutable internal order links; migrate schema1→2 safely and rename source category to bot.
+- Add shop/channel/welcome/leave/ticket/giveaway setup commands; keep automatic private purchase tickets and manual payment approval.
+- Add permission/hierarchy checked kick, ban, warning/history, timeout and safe give/take role controls.
+- Add opt-in persistent kick-on-rejoin rule with exemptions, default disabled, clear command and failed-action logging.
+- Expand help to five900×820 animated pages with command index and live readable usage; retain consistent cards and actual controls.
+
+## 1.6.0 — 2026-10-28
+
+- Ship only the focused Discord bot: remove dashboard/OAuth assets, web deployment and dependencies, unused AI/provider and inactive moderation/automod modules.
+- Remove premium, XP, reviews/rewards/referrals and reminder code; simplify environment and configuration to active features.
+- Preserve all 28 active commands, existing marketplace/payment/ticket protections and themed artwork. Remove unreachable customer-rating UI.
+- Read old guild settings compatibly without restoring retired features; retain existing database tables and historical order cleanup. No destructive data migration.
+- Replace broad documentation with bot-only setup and keep the complete Hinglish owner command guide.
+
 ## 1.5.0 — 2026-10-28
 
 - Extend the NEX visual theme to community/store cards, with ten compact bundled headers and graceful media fallback; preserve actual payment QR and configured shop images.

@@ -61,7 +61,7 @@ def product_path(root: Path, relative: str):
 
 
 class RateLimiter:
-    """Bounded process-local limiter; deploy one web worker or add a shared limiter."""
+    """Bounded process-local limiter; run one bot process per token."""
     def __init__(self):
         self.events = defaultdict(deque)
 
@@ -78,9 +78,9 @@ class RateLimiter:
 
 
 def check_hierarchy(guild, moderator, target, bot_member):
-    if target.id in (guild.owner_id, moderator.id, bot_member.id):
-        raise DomainError('This member cannot be targeted.')
-    if moderator.id != guild.owner_id and moderator.top_role <= target.top_role:
+    if target.id in (guild.owner_id,moderator.id,bot_member.id):
+        raise DomainError('You cannot target yourself, the server owner or this bot.')
+    if moderator.id!=guild.owner_id and moderator.top_role<=target.top_role:
         raise DomainError('Your role must be above the target member.')
-    if bot_member.top_role <= target.top_role:
+    if bot_member.top_role<=target.top_role:
         raise DomainError('Move the bot role above the target member.')

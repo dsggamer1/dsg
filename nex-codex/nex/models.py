@@ -28,6 +28,7 @@ class Product(Base):
     __table_args__ = (CheckConstraint('price >= 0'), CheckConstraint('claim_limit >= 1'))
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    code: Mapped[str] = mapped_column(String(16), default=lambda: uid()[:8])
     name: Mapped[str] = mapped_column(String(120))
     description: Mapped[str] = mapped_column(Text, default='')
     category: Mapped[str] = mapped_column(String(20))
@@ -102,22 +103,12 @@ class Entitlement(Base):
 
 
 class Hosting(Base):
+    """Historical order cleanup only; no hosting sales or provisioning."""
     __tablename__ = 'hosting'
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
     order_id: Mapped[str] = mapped_column(ForeignKey('orders.id'), unique=True)
     state: Mapped[str] = mapped_column(String(20), default='queued')
     notes: Mapped[str] = mapped_column(Text, default='')
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime)
-
-
-class Premium(Base):
-    __tablename__ = 'premium'
-    __table_args__ = (UniqueConstraint('guild_id', 'user_id'),)
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    guild_id: Mapped[int] = mapped_column(BigInteger)
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    plan: Mapped[str] = mapped_column(String(50))
-    active: Mapped[bool] = mapped_column(Boolean, default=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime)
 
 
@@ -132,49 +123,6 @@ class Audit(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
-class Moderation(Base):
-    __tablename__ = 'moderation'
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    moderator_id: Mapped[int] = mapped_column(BigInteger)
-    action: Mapped[str] = mapped_column(String(30))
-    reason: Mapped[str] = mapped_column(String(500))
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-
-
-class Review(Base):
-    __tablename__ = 'reviews'
-    __table_args__ = (UniqueConstraint('product_id', 'user_id'), CheckConstraint('rating >= 1 AND rating <= 5'))
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    product_id: Mapped[str] = mapped_column(ForeignKey('products.id'))
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    rating: Mapped[int] = mapped_column(Integer)
-    text: Mapped[str] = mapped_column(String(1000))
-    hidden: Mapped[bool] = mapped_column(Boolean, default=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-
-
-class Reward(Base):
-    __tablename__ = 'rewards'
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    guild_id: Mapped[int] = mapped_column(BigInteger)
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    points: Mapped[int] = mapped_column(Integer)
-    event_key: Mapped[str] = mapped_column(String(120), unique=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-
-
-class Referral(Base):
-    __tablename__ = 'referrals'
-    __table_args__ = (UniqueConstraint('guild_id', 'invitee_id'), CheckConstraint('referrer_id != invitee_id'))
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    guild_id: Mapped[int] = mapped_column(BigInteger)
-    referrer_id: Mapped[int] = mapped_column(BigInteger)
-    invitee_id: Mapped[int] = mapped_column(BigInteger)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
-
-
 class Restriction(Base):
     __tablename__ = 'restrictions'
     __table_args__ = (UniqueConstraint('guild_id', 'user_id'),)
@@ -183,16 +131,6 @@ class Restriction(Base):
     user_id: Mapped[int] = mapped_column(BigInteger)
     reason: Mapped[str] = mapped_column(String(500))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
-
-
-class Level(Base):
-    __tablename__ = 'levels'
-    __table_args__ = (UniqueConstraint('guild_id', 'user_id'),)
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    guild_id: Mapped[int] = mapped_column(BigInteger)
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    xp: Mapped[int] = mapped_column(Integer, default=0)
-    last_xp: Mapped[datetime | None] = mapped_column(DateTime)
 
 
 class Giveaway(Base):
@@ -216,31 +154,6 @@ class Entry(Base):
     user_id: Mapped[int] = mapped_column(BigInteger)
 
 
-class Reminder(Base):
-    __tablename__ = 'reminders'
-    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=uid)
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    text: Mapped[str] = mapped_column(String(500))
-    due_at: Mapped[datetime] = mapped_column(DateTime, index=True)
-    sent: Mapped[bool] = mapped_column(Boolean, default=False)
-
-
-class WebSession(Base):
-    __tablename__ = 'web_sessions'
-    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger)
-    username: Mapped[str] = mapped_column(String(100))
-    guilds: Mapped[list] = mapped_column(JSON)
-    csrf: Mapped[str] = mapped_column(String(80))
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
-
-
-class OAuthState(Base):
-    __tablename__ = 'oauth_states'
-    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
-
-
 class Heartbeat(Base):
     __tablename__ = 'heartbeat'
     name: Mapped[str] = mapped_column(String(20), primary_key=True)
@@ -254,3 +167,26 @@ class SchemaVersion(Base):
     version: Mapped[int] = mapped_column(Integer)
 
 Index('ix_entitlement_customer', Entitlement.guild_id, Entitlement.user_id)
+
+
+class Moderation(Base):
+    __tablename__ = 'moderation'
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    moderator_id: Mapped[int] = mapped_column(BigInteger)
+    action: Mapped[str] = mapped_column(String(30))
+    reason: Mapped[str] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class RejoinBlock(Base):
+    __tablename__ = 'rejoin_blocks'
+    __table_args__ = (UniqueConstraint('guild_id', 'user_id'),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    guild_id: Mapped[int] = mapped_column(BigInteger)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+Index('uq_product_guild_code', Product.guild_id, Product.code, unique=True)

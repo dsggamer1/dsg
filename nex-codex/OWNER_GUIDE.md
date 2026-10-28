@@ -37,7 +37,7 @@ Discord mein pehle `Support`, `Payment Reviewers` roles aur `Tickets` category b
 | Category option | Kya sell karna hai |
 |---|---|
 | `template` | Discord server template / template JSON |
-| `source` | Discord bot source code / source ZIP |
+| `bot` | Discord bot source code / source ZIP |
 
 Hosting category nahi hai.
 
@@ -72,10 +72,10 @@ Ab `/shop` se product check karo. `createshop` persistent Browse button post kar
 ### Example: bot source code
 
 ```text
-/addproduct name: Ticket Bot Source category: source price: 799 delivery: YOUR_HTTPS_DOWNLOAD_URL description: Python ticket bot source with setup instructions.
+/addproduct name: Ticket Bot Source category: bot price: 799 delivery: YOUR_HTTPS_DOWNLOAD_URL description: Python ticket bot source with setup instructions.
 ```
 
-Iska bhi Product ID copy karke terms set aur publish karo. Product apne aap publish nahi hota.
+Product suggestions se select karke terms set aur publish karo. Product apne aap publish nahi hota.
 
 ### File se delivery
 
@@ -109,6 +109,16 @@ Prefix example (default `!`):
 
 Multi-word positional values ko quotes mein rakho. Slash fields use karna easiest hai.
 
+### Short ID aur product suggestions
+
+Naye product ko short 8-character ID milti hai. `/productpublish`, `/productedit`, `/product`, `/buy` aur `/productid` ke product_id field mein type karo: product names + short IDs suggestions mein dikhenge (25 matches; name type karke filter karo). Owner ko drafts bhi dikhenge; members ko published products. ID badalne ke liye:
+
+```text
+/productid product_id: OLD_ID new_id: gaming-bot
+```
+
+3–16 lowercase letters/numbers, hyphen ya underscore. Old orders safe rehte hain. Internal database/order IDs change nahi hote. Categories sirf **template / bot** hain; old source category update mein bot ho jaati hai.
+
 ## 4. Customer purchase aur payment review
 
 1. Customer `/shop` khole → product select → Confirm purchase.
@@ -135,7 +145,39 @@ Free products: confirm claim → entitlement save → `/deliver`. Payment step s
 
 Welcome/leave placeholders: `{user}`, `{name}`, `{server}`. Disable: `/welcome enabled: false` or `/leave enabled: false`. Welcome/leave setup owner/admin; say/broadcast/giveaway staff/admin/owner. `/say` intentionally plain message hai; `/broadcast` branded announcement card hai. Giveaway prize delivery staff handles manually.
 
-## 6. Har registered command
+## 6. Direct setup + moderation
+
+```text
+/shopsetup channel: #shop title: NEX Shop description: Templates and bots.
+/channelsetup kind: logs channel: #logs
+/welcomesetup channel: #welcome message: Welcome {user}!
+/leavesetup channel: #leave restrict_rejoin: false message: Bye {name}.
+/ticketsetup category: Tickets staff_role: @Support
+/giveawaysetup channel: #giveaways
+```
+
+Shop setup/product changes OWNER_IDS only; other setup owner/admin. `/paymentsetup` remains QR/UPI setup. Confirm purchase par private ticket automatic banega; manually /ticket chalana required nahi (sirf recovery ke liye).
+
+```text
+/kick member: @user reason: REASON
+/ban member: @user reason: REASON
+/warn member: @user reason: REASON
+/timeout member: @user minutes: 30 reason: REASON
+/timeout member: @user minutes: 0 reason: Remove timeout
+/giverole member: @user role: @Member
+/takerole member: @user role: @Member
+/warnings member: @user
+```
+
+Actual Discord permissions required (Kick/Ban/Moderate Members/Manage Roles). Bot aur moderator role target se upar honi chahiye. Kick/ban confirmation maangte hain; warnings persist. Privileged/staff/payment/managed roles safe role command se assign/remove nahi hote.
+
+### Optional leave/rejoin rule
+
+`/leavesetup restrict_rejoin: true` enable karo toh jo member uske baad leave kare, uski ID save hogi aur wapis join par kick milega. Default false. Owners/admins/configured staff/reviewers/bots exempt. Bot ko Kick Members aur target se upar role chahiye. Leave event mein moderation kick bhi include ho sakta hai; yeh abuse detection nahi hai. Existing saved IDs re-enable karne par apply honge.
+
+`/rejoinallow user_id: NUMERIC_ID` kisi user ka block clear karega. `/leavesetup restrict_rejoin: false` enforcement band karega. No automatic ban. Serious restrictions review karna staff ka kaam hai.
+
+## 7. Har registered command
 
 | Command | Fields / purpose | Access |
 |---|---|---|
@@ -167,11 +209,22 @@ Welcome/leave placeholders: `{user}`, `{name}`, `{server}`. Disable: `/welcome e
 | `/productedit` | product_id, field, value | Configured bot owner |
 | `/productpublish` | product_id, published | Configured bot owner |
 | `/createshop` | Optional channel: persistent shop panel | Configured bot owner |
+| `/productid` | product_id, new_id: short public ID change | Configured bot owner |
+| `/shopsetup` | channel, optional title/description/image | Configured bot owner |
+| `/channelsetup` | kind, channel | Owner/admin; shop kind owner only |
+| `/welcomesetup` | channel, message | Owner/admin |
+| `/leavesetup` | channel, restrict_rejoin, message | Owner/admin |
+| `/ticketsetup` | category, staff_role | Owner/admin |
+| `/giveawaysetup` | channel | Owner/admin |
+| `/rejoinallow` | user_id | Owner/admin |
+| `/kick`, `/ban` | member, reason; confirmation | Discord Kick/Ban Members |
+| `/warn`, `/warnings`, `/timeout` | member; minutes/reason as applicable | Discord Moderate Members |
+| `/giverole`, `/takerole` | member, role | Discord Manage Roles |
 | `!sync` | Hidden prefix-only registration retry (use your configured prefix) | Configured bot owner |
 
 `orderstate` records a manual decision; it never transfers/refunds money. Ticket IDs appear in the ticket response/channel topic; Giveaway IDs appear in giveaway footers.
 
-## 7. Theme, buttons aur mention reply
+## 8. Theme, buttons aur mention reply
 
 - Bot ko directly mention karo: branded reply with Explore commands / Browse shop buttons. Bots/webhooks, everyone-only mentions and normal mention-prefix commands don't cause duplicate greetings. Rate limits apply.
 - Help ke real buttons Discord image ke **neeche** hain. Image/GIF pixels clickable nahi hote. Help has Previous/Home/Next plus Shop and, when allowed, Setup guide.
@@ -180,4 +233,4 @@ Welcome/leave placeholders: `{user}`, `{name}`, `{server}`. Disable: `/welcome e
 
 ## Run
 
-Fill `.env`, install `pip install -r requirements.txt`, run `python main.py`. Existing hosting update mein apna `.env`, database aur private products preserve karo. Optional dashboard/OAuth instructions README mein hain. Tests use mocked Discord APIs; live Discord/Wispbyte behavior requires your account credentials and permissions.
+Fill `.env`, install `pip install -r requirements.txt`, run `python main.py`. Existing hosting update mein apna `.env`, database aur private products preserve karo. Tests use mocked Discord APIs; live Discord/Wispbyte behavior requires your account credentials and permissions.

@@ -70,13 +70,13 @@ class CheckoutView(PersonalView):
 
 class ProductSelect(discord.ui.Select):
     def __init__(self, products):
-        super().__init__(placeholder='Explore a product and place an order', options=[discord.SelectOption(label=p.name[:100], value=p.id, description=(f'{p.currency} {p.price/100:,.2f}' if p.price else 'Free') + ' · ' + ('Server template' if p.category == 'template' else 'Bot source code')) for p in products])
+        super().__init__(placeholder='Explore a product and place an order', options=[discord.SelectOption(label=p.name[:100], value=p.code, description=(f'{p.currency} {p.price/100:,.2f}' if p.price else 'Free') + ' · ' + ('Server template' if p.category == 'template' else 'Bot source code')) for p in products])
 
     async def callback(self, interaction):
         bot = interaction.client
         with bot.db.sessions() as s:
-            product = s.get(Product, self.values[0])
-            if not product or product.guild_id != interaction.guild_id or not product.published or product.archived or product.category not in ('template', 'source'):
+            product = bot.market.resolve(s, interaction.guild_id, self.values[0])
+            if not product or product.guild_id != interaction.guild_id or not product.published or product.archived or product.category not in ('template', 'bot'):
                 raise DomainError('This product is no longer available.')
         cfg = bot.core.config(interaction.guild_id)
         await interaction.response.defer(ephemeral=True)
@@ -100,7 +100,7 @@ class ShopView(PersonalView):
         item = themed_embed('shop', self.config['shop_title'], self.config['shop_description'], config=self.config)
         for p in self.products:
             price = f'{p.currency} {p.price/100:,.2f}' if p.price else 'Free'
-            item.add_field(name=f'{p.name} · {price}', value=f'{p.description[:160] or "Explore this product."}\n`{p.id}`', inline=False)
+            item.add_field(name=f'{p.name} · {price}', value=f'{p.description[:160] or "Explore this product."}\n`{p.code}`', inline=False)
         if not self.products:
             item.description = 'No published products match this view. The bot owner can add a product with /addproduct and publish it with /productpublish.'
         item.set_footer(text=f'NEX CODEX • Page {self.page} • Payments checked by people')

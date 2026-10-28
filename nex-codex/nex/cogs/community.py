@@ -40,14 +40,21 @@ class Community(commands.Cog):
         a.require(self.bot.core.config(ctx.guild.id))
         if not 1 <= minutes <= 43200 or not 1 <= winners <= 20 or not 1 <= len(prize) <= 200:
             raise DomainError('Use a prize up to 200 characters, 1–43200 minutes and 1–20 winners.')
+        cfg=self.bot.core.config(ctx.guild.id)
+        channel=ctx.guild.get_channel(cfg['giveaway_channel']) if cfg['giveaway_channel'] else ctx.channel
+        if not channel:raise DomainError('Configured giveaway channel is missing; run /giveawaysetup.')
         with self.bot.db.transaction() as s:
-            row = Giveaway(guild_id=ctx.guild.id, channel_id=ctx.channel.id, prize=prize, winner_count=winners, ends_at=now()+timedelta(minutes=minutes))
+            row = Giveaway(guild_id=ctx.guild.id, channel_id=channel.id, prize=prize, winner_count=winners, ends_at=now()+timedelta(minutes=minutes))
             s.add(row)
             s.flush()
             audit(s, a, 'giveaway.create', row.id)
         item = themed_embed('giveaway', 'Community giveaway', f'**{prize}**\n{winners} winner(s) • Ends <t:{int(row.ends_at.replace(tzinfo=__import__("datetime").timezone.utc).timestamp())}:R>\nClick below to enter.', config=self.bot.core.config(ctx.guild.id))
         item.set_footer(text=f'NEX CODEX • {row.id}')
-        await send_card(ctx.send, item, key='giveaway', channel=ctx.channel, view=GiveawayEntry(self.bot.core.config(ctx.guild.id)))
+        if channel.id==ctx.channel.id:
+            await send_card(ctx.send,item,key='giveaway',channel=channel,view=GiveawayEntry(cfg))
+        else:
+            await send_card(channel.send,item,key='giveaway',channel=channel,view=GiveawayEntry(cfg))
+            await respond(ctx,'Giveaway posted',channel.mention)
 
     @commands.hybrid_command(help='Reroll an ended giveaway (staff).')
     @commands.guild_only()
