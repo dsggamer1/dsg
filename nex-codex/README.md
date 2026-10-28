@@ -47,6 +47,10 @@ Server setup commands and dashboard configuration are restricted to configured o
 
 Discord controls who can install an application. Runtime setup checks do not prove who originally invited it: users with Manage Server may be offered installation by Discord even without Administrator. For a bot used only by your own account, disable Public Bot in Developer Portal. To share installation with other administrators, configure Discord's application/server integration permissions and distribute the invite only to your intended administrators. This project does not claim to override Discord's installation rules.
 
+## Easy owner setup
+
+Start with `/setup` for a guided menu, or read **[OWNER_GUIDE.md](OWNER_GUIDE.md)** for every command with Hinglish examples. `/paymentsetup` accepts your UPI/payee/QR and Discord role/category selectors without JSON. `/addproduct` offers `template` / `source` choices; price `499` means 499 currency units, `0` means free. Draft → terms → publish → shop.
+
 ## Command and permission map
 
 Slash commands and equivalent prefix commands are registered. `/help` lists the current registry, with management commands shown according to owner/administrator access. Runtime checks enforce permissions even when a command is visible in Discord's menu.
@@ -56,16 +60,22 @@ Slash commands and equivalent prefix commands are registered. `/help` lists the 
 | Members | `/help`, `/shop`, `/product`, `/buy`, `/orders`, `/deliver`, `/ticket`, `/payment` |
 | Staff or administrator | `/say`, `/broadcast`, `/giveaway`, `/reroll`, `/ticketmanage`, `/transcript`, `/orderstate` |
 | Payment reviewers or administrator | `/paymentreview` — self-review is always prohibited |
-| **Bot owner or server administrator** | `/welcome`, `/leave`, `/configure`, `/prefix`, `/setup`, `/diagnostics`, `/installemojis` |
+| **Bot owner or server administrator** | `/welcome`, `/leave`, `/configure`, `/prefix`, `/setup`, `/paymentsetup`, `/diagnostics`, `/installemojis` |
 | **Bot owners in OWNER_IDS only** | `/addproduct`, `/productedit`, `/productpublish`, `/createshop`, `!sync` |
 
 Configured bot owners can also perform staff/reviewer operations, subject to the self-payment prohibition. `staff_roles` grant staff access; `payment_roles` grant payment review only. Configuration/product ownership checks also run in services and the dashboard. The old text spelling `!productadd` is an alias for `!addproduct`; the slash command is `/addproduct`.
 
 Moderation, generic utility/fun, XP, role selection, premium, referrals and AI commands are **not registered** in this focused release. Their historical models/services remain for data compatibility. Automated moderation/security/XP message processors are inactive. Existing saved reminders still finish through the recovery worker; no new reminder command is exposed. Hosting remains excluded.
 
+### Consistent theme and mention shortcuts
+
+Directly mentioning the bot opens a branded personal greeting with working Help/Shop buttons. Replies are rate-limited; bots/webhooks and valid commands are ignored by the greeting listener. All active message families share NEX branding and compact bundled 900×230 PNG banners, including shop/product, tickets/payment, welcome/leave, giveaways, broadcast and setup. Custom shop images and payment QR images take precedence. Small status/error messages keep the shared embed style; `/say` stays plain text.
+
+Keep `nex/assets/cards/` along with the help GIFs and emoji PNGs. No runtime Pillow dependency. Missing media/Attach Files falls back to usable text/embed content. `scripts/render_cards.py` is an optional Pillow build tool.
+
 ### Animated command center
 
-`/help` (or your configured prefix + `help`) opens a personal NEX CODEX command center with a bundled cyan/blue animated banner. The dropdown switches between **Home**, **Welcome & announcements**, **Shop & tickets**, and **Giveaways**, with matching GIF artwork. Use the real Previous / Home / Next buttons below the dropdown to navigate. Controls disable after three minutes; run /help again for a fresh menu. Command lists come from the actual registered cogs; owner/admin controls retain their permission checks and visibility rules. Only the member who opened the menu can operate it.
+`/help` (or your configured prefix + `help`) opens a personal NEX CODEX command center with a bundled cyan/blue animated banner. The dropdown switches between **Home**, **Welcome & announcements**, **Shop & tickets**, and **Giveaways**, with matching GIF artwork. Use the real Previous / Home / Next buttons below the dropdown to navigate. Controls disable after three minutes; run /help again for a fresh menu. Command lists come from the actual registered cogs; owner/admin controls retain their permission checks and visibility rules. Only the member who opened the menu can operate it. Real Browse shop and owner/admin Setup guide shortcuts sit below the navigation. Image pixels themselves are not interactive; Discord buttons are separate components.
 
 The four GIFs in `nex/assets/help/` are included in the full ZIP and attach directly to Discord messages—no external image hosting, GIF URL configuration or image processing at startup. Keep this folder when uploading to Wispbyte. The bot needs **Attach Files** for the artwork; if that permission or an asset is missing, text help and the dropdown remain available. Uploads are deferred before category changes; superseded attachments are replaced. Each GIF is 900×660 with 32 frames in a smooth 3.2-second loop, under 270KB. The theme combines an orbital NEX emblem, subtle particles, glass cards and coordinated category accents. Text commands remain selectable/readable outside the artwork.
 

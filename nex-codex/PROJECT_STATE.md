@@ -1,13 +1,13 @@
 # NEX CODEX project state
 
-Updated 2026-10-28. Version **1.4.1**. Focused community and template/source store. This replaces the earlier broad all-in-one command surface at the user's request.
+Updated 2026-10-28. Version **1.5.0**. Focused community and template/source store. This replaces the earlier broad all-in-one command surface at the user's request.
 
 ## Active command contract
 
 - Members: help, shop/product browsing, confirmed buy/free claim, orders, entitled delivery, support/purchase/appeal tickets, receipt submission.
 - Staff/admin: say, broadcast, giveaways/rerolls, ticket operations/transcripts, manual order cancellation/refund records.
 - Payment reviewers/admin: independent payment decisions; self-payment review is always denied.
-- **Configured owner or server administrator:** welcome/leave setup and previews, configure, prefix, setup, diagnostics and installemojis.
+- **Configured owner or server administrator:** welcome/leave setup and previews, configure, prefix, setup, paymentsetup, diagnostics and installemojis.
 - **Only bot owners listed in OWNER_IDS:** addproduct, productedit/publish, createshop and sync.
 - Administrator status grants server configuration access; configured staff roles alone do not. Neither grants product/shop ownership. This is enforced in bot checks, services and dashboard routes. Discord guild owners have administrator privileges for their server; they do not become configured bot owners.
 - Removed active moderation, general utility/fun, XP/role selection, reminders, premium, reviews/referrals/rewards and AI commands. Hosting remains excluded. Legacy service/model files and records are retained; unrelated moderation/security/XP event processors are inactive. Saved reminders still recover without exposing new reminder creation.
@@ -22,7 +22,16 @@ Updated 2026-10-28. Version **1.4.1**. Focused community and template/source sto
 - Preserved SQL persistence, source/template CRUD, free-claim limits, immutable order snapshots, manual QR/UPI payment review, private ticket overwrites, protected files/links/instructions, duplicate approval protection and refund revocation.
 - Dashboard matching the focused scope, owner-only product writes and owner/administrator settings writes, staff/reviewer payment queue, customer order history and public catalogue. OAuth sessions/state/CSRF/live membership checks retained.
 
-## Animated help update
+## Unified experience update (1.5.0)
+
+- One shared brand treatment and ten compact bundled 900×230 headers across shop/products, tickets/payment submissions, welcome/leave, announcements, giveaways, setup and mention greetings. QR and custom shop images take precedence; missing assets/attachment permission falls back to text. Plain /say stays plain; compact status/error embeds share the brand.
+- /setup opens a personal four-page walkthrough. New /paymentsetup provides typed role/category selectors plus UPI/payee/QR/currency inputs, validates all fields, enforces owner/admin access and preserves previously configured staff roles.
+- /addproduct offers template/source slash choices. OWNER_GUIDE.md explains prices, IDs, free vs paid, draft/publish/shop, private files, every active command and manual review. No payment authorization rules changed.
+- Help adds real Shop and owner/admin Setup guide shortcuts. Mention replies open personal Help/Shop buttons; ignore bots/webhooks/valid commands and apply user/channel rate limits. Images cannot contain actual clickable Discord controls.
+- Registered surface is now 28 slash commands plus the hidden owner-only prefix sync. Credentials and live Discord/Wispbyte verification remain external requirements.
+- Complete extracted 1.5.0 candidate: **197 tests passed** on Python3.11.18 and Python3.14.4 (2 and2740 upstream deprecation warnings). Full security/service, command/component, media/mention/setup, packaging and dashboard mock coverage passed. Both runtimes passed compileall/import/SQLite initialization/28-command serialization/controlled blank-token startup. Ten headers decoded and visually inspected; shared cloud Chromium confirms390px scaling without horizontal overflow. No live Discord or Wispbyte claim.
+
+## Prior animated help update (1.4.1)
 
 - Refined orbital emblem, glass cards, cyan/teal/blue category accents and subtle looping particles. All four 900×660 GIFs contain 32 frames, loop over 3.2 seconds and remain below 270KB. No startup image rendering is required.
 - Original NEX-branded cyan/blue animated help artwork inspired by the supplied reference; only active feature families shown. Four matching GIFs bundled in the ZIP, with no third-party brand copied.

@@ -6,6 +6,7 @@ from ..security import DomainError
 from ..utils.discord import actor, respond
 from ..utils.theme import themed_embed, emoji_for
 from ..services.core import audit
+from ..utils.cards import send_card
 
 
 class GiveawayEntry(discord.ui.View):
@@ -20,7 +21,7 @@ class GiveawayEntry(discord.ui.View):
             from ..security import Actor
             giveaway_id = interaction.message.embeds[0].footer.text.split(' • ')[-1]
             interaction.client.community.enter(Actor(interaction.user.id, interaction.guild_id), giveaway_id)
-            await interaction.followup.send('Your entry is saved. Good luck!', ephemeral=True)
+            await interaction.followup.send(embed=themed_embed('success', 'You’re on the list', 'Your giveaway entry is saved. Good luck!', config=interaction.client.core.config(interaction.guild_id)), ephemeral=True)
         except (DomainError, IndexError):
             await interaction.followup.send('Entry unavailable: giveaway ended, entry already recorded, or invalid giveaway.', ephemeral=True)
 
@@ -46,7 +47,7 @@ class Community(commands.Cog):
             audit(s, a, 'giveaway.create', row.id)
         item = themed_embed('giveaway', 'Community giveaway', f'**{prize}**\n{winners} winner(s) • Ends <t:{int(row.ends_at.replace(tzinfo=__import__("datetime").timezone.utc).timestamp())}:R>\nClick below to enter.', config=self.bot.core.config(ctx.guild.id))
         item.set_footer(text=f'NEX CODEX • {row.id}')
-        await ctx.send(embed=item, view=GiveawayEntry(self.bot.core.config(ctx.guild.id)))
+        await send_card(ctx.send, item, key='giveaway', channel=ctx.channel, view=GiveawayEntry(self.bot.core.config(ctx.guild.id)))
 
     @commands.hybrid_command(help='Reroll an ended giveaway (staff).')
     @commands.guild_only()

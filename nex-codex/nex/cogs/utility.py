@@ -6,6 +6,9 @@ from ..utils.discord import actor, respond, embed, owner_only, admin_or_owner
 from ..utils.theme import themed_embed, emoji_for
 from ..utils.help_media import help_file, can_attach
 from ..utils.storefront import PersonalView
+from ..utils.cards import send_card
+from ..utils.guides import GuideView, guide_card
+from ..utils.storefront import ShopView
 from ..security import DomainError
 from ..services.core import audit
 
@@ -121,6 +124,26 @@ class HelpSelect(discord.ui.Select):
             await interaction.edit_original_response(embed=item, view=self.view, attachments=[])
 
 
+class HelpShortcut(discord.ui.Button):
+    def __init__(self, destination, config=None):
+        self.destination = destination
+        super().__init__(label='Browse shop' if destination=='shop' else 'Setup guide', style=discord.ButtonStyle.secondary, emoji=emoji_for('shop' if destination=='shop' else 'settings',config), row=2)
+
+    async def callback(self, interaction):
+        await interaction.response.defer(ephemeral=True)
+        bot=interaction.client
+        cfg=bot.core.config(interaction.guild_id)
+        if self.destination=='shop':
+            bot.limiter.check(('help_shop',interaction.guild_id,interaction.user.id),5,60)
+            view=ShopView(interaction.user.id,bot,interaction.guild_id)
+            await send_card(interaction.followup.send,view.card(),key='shop',channel=interaction.channel,view=view,ephemeral=True)
+        else:
+            permissions=interaction.user.guild_permissions
+            if interaction.user.id not in bot.config.owner_ids and not permissions.administrator:
+                raise DomainError('A configured bot owner or server Administrator is required.')
+            await send_card(interaction.followup.send,guide_card('start',cfg),key='settings',channel=interaction.channel,view=GuideView(interaction.user.id,cfg),ephemeral=True)
+
+
 class Utility(commands.Cog):
     """Focused community controls and owner configuration."""
     def __init__(self, bot):
@@ -130,22 +153,30 @@ class Utility(commands.Cog):
 
     @commands.hybrid_command(help='Browse the actual shop, ticket, giveaway and announcement commands.')
     async def help(self, ctx):
-        owner = ctx.author.id in self.bot.config.owner_ids
-        administrator = bool(ctx.guild and getattr(getattr(ctx.author, 'guild_permissions', None), 'administrator', False))
-        cfg = self.bot.core.config(ctx.guild.id) if ctx.guild else None
-        media_enabled = can_attach(ctx)
-        view = HelpView(ctx.author.id, cfg)
+        await self.send_help(ctx.author, ctx.guild, getattr(ctx, 'channel', None), ctx.send)
+
+    async def send_help(self, author, guild, channel, send):
+        from types import SimpleNamespace
+        owner = author.id in self.bot.config.owner_ids
+        administrator = bool(guild and getattr(getattr(author, 'guild_permissions', None), 'administrator', False))
+        cfg = self.bot.core.config(guild.id) if guild else None
+        media_enabled = can_attach(SimpleNamespace(guild=guild, channel=channel))
+        view = HelpView(author.id, cfg)
         menu = HelpSelect(self.bot, owner, cfg, administrator, media_enabled)
         view.add_item(menu)
         view.update_navigation('Home', menu.options)
+        if guild:
+            view.add_item(HelpShortcut('shop', cfg))
+            if owner or administrator:
+                view.add_item(HelpShortcut('setup', cfg))
         item = help_card(self.bot, owner, administrator, cfg)
         file = help_file('Home') if media_enabled else None
         if file:
             with closing(file):
                 item.set_image(url='attachment://nex_help.gif')
-                view.message = await ctx.send(embed=item, view=view, file=file, ephemeral=True)
+                view.message = await send(embed=item, view=view, file=file, ephemeral=True)
         else:
-            view.message = await ctx.send(embed=item, view=view, ephemeral=True)
+            view.message = await send(embed=item, view=view, ephemeral=True)
 
     async def membership_message(self, ctx, kind, channel, message, enabled):
         a = actor(ctx)
@@ -168,7 +199,7 @@ class Utility(commands.Cog):
         item = themed_embed(kind, f'{kind.title()} message • Preview', text, config=cfg)
         destination = cfg[kind+'_channel']
         item.add_field(name='Destination', value=f'<#{destination}>' if destination else f'Not configured. Use /{kind} with a channel.')
-        await ctx.send(embed=item, ephemeral=True)
+        await send_card(ctx.send, item, key=kind, channel=getattr(ctx, 'channel', None), ephemeral=True)
 
     @commands.hybrid_command(extras={'admin_only': True}, help='Set or preview the welcome message; enabled:false disables it (owner or administrator).')
     @admin_or_owner()
@@ -198,7 +229,7 @@ class Utility(commands.Cog):
         if title is not None:
             if not title.strip() or len(title)>120:
                 raise DomainError('Use a title of 1–120 characters.')
-            sent = await channel.send(embed=themed_embed('broadcast', title, message, config=self.bot.core.config(ctx.guild.id)), allowed_mentions=discord.AllowedMentions.none())
+            sent = await send_card(channel.send, themed_embed('broadcast', title, message, config=self.bot.core.config(ctx.guild.id)), key='broadcast', channel=channel, allowed_mentions=discord.AllowedMentions.none())
         else:
             sent = await channel.send(message, allowed_mentions=discord.AllowedMentions.none())
         with self.bot.db.transaction() as session:
@@ -237,12 +268,36 @@ class Utility(commands.Cog):
     @admin_or_owner()
     @commands.guild_only()
     async def setup(self, ctx):
-        item = themed_embed('settings', 'NEX CODEX • Server setup', 'Configured bot owners and server administrators can set up this server. Products and shop panels remain restricted to OWNER_IDS.', config=self.bot.core.config(ctx.guild.id))
-        item.add_field(name='01 · Welcome & leave', value='Use /welcome and /leave with a channel and template. Templates: {user}, {name}, {server}.', inline=False)
-        item.add_field(name='02 · Private support', value='Use /configure to set staff_roles, payment_roles, ticket_category and log_channel. Role lists use JSON arrays of numeric IDs.', inline=False)
-        item.add_field(name='03 · Your collection', value='Create drafts with /addproduct, review terms with /productedit, then /productpublish. /createshop posts a permanent browse button.', inline=False)
-        item.add_field(name='04 · Manual payments', value='Configure upi_id, qr_url, payee and currency. Reviewers independently verify transactions; screenshots never auto-approve.', inline=False)
-        item.add_field(name='05 · Brand details', value='The bundled cyan emojis load automatically at startup. /installemojis optionally overrides them with server emojis. Configure shop_title, shop_description, shop_image and emojis. Emoji slots include welcome, leave, ticket, giveaway, broadcast, product, shop and help.', inline=False)
+        actor(ctx).require_admin()
+        cfg = self.bot.core.config(ctx.guild.id)
+        await send_card(ctx.send, guide_card('start', cfg), key='settings', channel=ctx.channel, view=GuideView(ctx.author.id,cfg), ephemeral=True)
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Set manual UPI/QR details and ticket roles using Discord selectors (owner or admin).')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def paymentsetup(self, ctx, upi_id: str, payee: str, qr_url: str, staff_role: discord.Role, payment_role: discord.Role, ticket_category: discord.CategoryChannel, currency: str = 'INR'):
+        a = actor(ctx)
+        a.require_admin()
+        for role in (staff_role, payment_role):
+            if role.guild.id != ctx.guild.id or role.is_default():
+                raise DomainError('Choose a staff/reviewer role in this server; @everyone is not allowed.')
+        if ticket_category.guild.id != ctx.guild.id:
+            raise DomainError('Choose a ticket category in this server.')
+        if not upi_id.strip() or not payee.strip() or not qr_url.strip():
+            raise DomainError('Provide your UPI ID, payee name and HTTPS QR image URL.')
+        self.bot.limiter.check(('payment_setup', ctx.guild.id, ctx.author.id), 3, 60)
+        cfg = self.bot.core.config(ctx.guild.id)
+        cfg = self.bot.core.configure(a, {
+            'upi_id': upi_id.strip(), 'payee': payee.strip(), 'qr_url': qr_url.strip(), 'currency': currency.strip().upper(),
+            'staff_roles': list(dict.fromkeys([*cfg['staff_roles'], staff_role.id])),
+            'payment_roles': list(dict.fromkeys([*cfg['payment_roles'], payment_role.id])),
+            'ticket_category': ticket_category.id,
+        })
+        item = themed_embed('settings', 'Payment workspace ready', 'Manual QR/UPI details saved. Check the QR image below belongs to your account before opening sales.', config=cfg)
+        item.add_field(name='Payee / UPI', value=f"{cfg['payee']}\n`{cfg['upi_id']}`")
+        item.add_field(name='Currency', value=cfg['currency'])
+        item.add_field(name='Next step', value='Owner: /addproduct → /productedit for terms → /productpublish → /createshop. Run /setup for examples.', inline=False)
+        item.set_image(url=cfg['qr_url'])
         await ctx.send(embed=item, ephemeral=True)
 
     @commands.hybrid_command(extras={'admin_only': True}, help='Check local command setup and channel permissions (owner or administrator).')

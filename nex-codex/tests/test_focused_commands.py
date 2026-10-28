@@ -27,7 +27,7 @@ def test_nonowners_cannot_change_products(core,market,paid,who):
 async def test_management_command_checks_prefix_and_slash(db,core,tmp_path,user_id,administrator):
     bot=await new_bot(db,tmp_path)
     owner_names=['addproduct','productedit','productpublish','createshop','sync']
-    admin_names=['welcome','leave','prefix','configure','setup','diagnostics','installemojis']
+    admin_names=['welcome','leave','prefix','configure','setup','paymentsetup','diagnostics','installemojis']
     for name in owner_names+admin_names:
         command=bot.get_command(name)
         ctx=SimpleNamespace(bot=bot,command=command,interaction=None,guild=SimpleNamespace(id=1000),author=SimpleNamespace(id=user_id,guild_permissions=discord.Permissions(administrator=administrator)))
@@ -161,7 +161,7 @@ async def test_owner_posts_persistent_shop_and_every_buyer_gets_private_view(db,
     # A newly constructed view dispatches the same component after process restart.
     restored=ShopPanel()
     for user_id in (200,201):
-        interaction=SimpleNamespace(guild_id=1000,client=bot,user=SimpleNamespace(id=user_id),response=SimpleNamespace(defer=AsyncMock()),followup=SimpleNamespace(send=AsyncMock()))
+        interaction=SimpleNamespace(channel=channel,guild_id=1000,client=bot,user=SimpleNamespace(id=user_id),response=SimpleNamespace(defer=AsyncMock()),followup=SimpleNamespace(send=AsyncMock()))
         await restored.browse.callback(interaction)
         args=interaction.followup.send.await_args.kwargs
         assert args['ephemeral'] and isinstance(args['view'],ShopView) and args['view'].user_id==user_id
@@ -200,7 +200,7 @@ async def test_persistent_giveaway_button_acknowledges_and_records_one_entry(db,
     interaction=SimpleNamespace(client=bot,guild_id=1000,user=SimpleNamespace(id=200),message=SimpleNamespace(embeds=[SimpleNamespace(footer=SimpleNamespace(text=f'NEX CODEX • {row.id}'))]),response=SimpleNamespace(defer=AsyncMock()),followup=SimpleNamespace(send=AsyncMock()))
     await view.enter.callback(interaction)
     interaction.response.defer.assert_awaited_once_with(ephemeral=True)
-    assert 'saved' in interaction.followup.send.await_args.args[0]
+    assert 'saved' in interaction.followup.send.await_args.kwargs['embed'].description
     await view.enter.callback(interaction)
     assert 'already recorded' in interaction.followup.send.await_args.args[0]
     with db.sessions() as s:

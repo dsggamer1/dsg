@@ -1,3 +1,4 @@
+from typing import Literal
 import asyncio
 import io
 import json
@@ -10,6 +11,7 @@ from ..utils.discord import actor, respond, embed, confirm, price_minor, owner_o
 from ..services.core import audit
 from ..schemas import ProductInput
 from ..utils.theme import themed_embed
+from ..utils.cards import send_card
 from ..utils.storefront import ShopView, CheckoutView, ShopPanel, product_embed
 
 
@@ -33,7 +35,7 @@ class Commerce(commands.Cog):
         item = themed_embed('shop', cfg['shop_title'], cfg['shop_description'], config=cfg)
         if cfg['shop_image']:
             item.set_image(url=cfg['shop_image'])
-        message = await channel.send(embed=item, view=ShopPanel(cfg))
+        message = await send_card(channel.send, item, key='shop', channel=channel, view=ShopPanel(cfg))
         with self.bot.db.transaction() as session:
             audit(session, a, 'shop.publish', message.id, channel_id=channel.id)
         await respond(ctx, 'Shop created', f'Your shop panel is live in {channel.mention}. Its browse button survives bot restarts.')
@@ -42,7 +44,7 @@ class Commerce(commands.Cog):
     @commands.guild_only()
     async def shop(self, ctx, category: str = '', search: str = '', page: int = 1):
         view = ShopView(ctx.author.id, self.bot, ctx.guild.id, category, search, page)
-        await ctx.send(embed=view.card(), view=view)
+        await send_card(ctx.send, view.card(), key='shop', channel=ctx.channel, view=view)
 
     @commands.hybrid_command(help='Inspect product terms, details and rating.')
     @commands.guild_only()
@@ -56,18 +58,18 @@ class Commerce(commands.Cog):
         cfg = self.bot.core.config(ctx.guild.id)
         item = product_embed(p, cfg)
         item.add_field(name='Customer rating', value=f'{rating:.1f}/5' if rating else 'Be the first to leave a review.')
-        await ctx.send(embed=item, view=CheckoutView(ctx.author.id, p, cfg))
+        await send_card(ctx.send, item, key='product', channel=ctx.channel, view=CheckoutView(ctx.author.id, p, cfg))
 
     @commands.hybrid_command(name='addproduct', aliases=['productadd'], extras={'owner_only': True}, help='Create a template/source draft (bot owner). Price example: 499.00.')
     @owner_only()
     @commands.guild_only()
-    async def productadd(self, ctx, name: str, category: str, price: str, delivery: str, description: str = ''):
+    async def productadd(self, ctx, name: str, category: Literal['template', 'source'], price: str, delivery: str, description: str = ''):
         a = actor(ctx)
         cfg = self.bot.core.config(ctx.guild.id)
         a.require_owner()
         kind = 'link' if delivery.startswith('https://') else 'instructions'
         p = self.bot.market.save_product(a, {'name': name, 'category': category, 'price': price_minor(price), 'currency': cfg['currency'], 'delivery_kind': kind, 'delivery_value': delivery, 'description': description})
-        await respond(ctx, 'Product draft created', f'**{p.name}** · {p.currency} {p.price/100:,.2f}\nProduct ID: `{p.id}`\nSet terms with `/productedit`, then use `/productpublish {p.id} true` to open sales.')
+        await respond(ctx, 'Product draft created', f'**{p.name}** · {p.currency} {p.price/100:,.2f}\nProduct ID: `{p.id}`\nSet terms: `/productedit product_id: {p.id} field: terms value: YOUR_TERMS`\nPublish: `/productpublish product_id: {p.id} published: true`\nThen `/createshop`. Use `/setup` → Add products for examples.')
 
     @commands.hybrid_command(extras={'owner_only': True}, help='Edit a product field (bot owner). Prices use currency units; other values use JSON.')
     @owner_only()
@@ -144,8 +146,8 @@ class Commerce(commands.Cog):
         item = themed_embed('ticket', 'Manual payment • staff verification required', f'Order: `{order.id}`\nAmount: **{order.currency} {order.amount/100:.2f}**\nPayee: {cfg["payee"]}\nUPI: `{cfg["upi_id"]}`\n\n{cfg["payment_instructions"]}\n\nUpload your receipt with `/payment`. A screenshot alone is not proof of payment. Staff will independently check the transaction.', config=cfg)
         if cfg['qr_url']:
             item.set_image(url=cfg['qr_url'])
-        await channel.send(content=f'<@{customer.id}>', embed=item)
-        await reply(embed=embed('Purchase ticket ready', f'Continue in {channel.mention}. Order `{order.id}`'), ephemeral=True)
+        await send_card(channel.send, item, key='payment', channel=channel, content=f'<@{customer.id}>')
+        await send_card(reply, themed_embed('ticket', 'Purchase ticket ready', f'Continue in {channel.mention}. Order `{order.id}`', config=cfg), key='ticket', channel=channel, ephemeral=True)
 
     @commands.hybrid_command(help='Open a support or appeal ticket; resume a purchase with its order ID.')
     @commands.guild_only()
@@ -160,7 +162,7 @@ class Commerce(commands.Cog):
             lock = self.bot.ticket_locks.setdefault((ctx.guild.id, ctx.author.id), asyncio.Lock())
             async with lock:
                 row, channel = await self.bot.tickets.open(a, ctx.guild, ctx.author, category)
-            await ctx.send(embed=themed_embed('ticket', 'Ticket ready', f'{channel.mention}\nTicket `{row.id}`', config=self.bot.core.config(ctx.guild.id)), ephemeral=True)
+            await send_card(ctx.send, themed_embed('ticket', 'Ticket ready', f'{channel.mention}\nTicket `{row.id}`', config=self.bot.core.config(ctx.guild.id)), key='ticket', channel=ctx.channel, ephemeral=True)
 
     @commands.hybrid_command(help='Claim, unclaim, close or reopen a ticket (staff).')
     @commands.guild_only()
@@ -196,7 +198,7 @@ class Commerce(commands.Cog):
         self.bot.market.submit_payment(actor(ctx), order_id, screenshot.url, reference)
         cfg = self.bot.core.config(ctx.guild.id)
         roles = [discord.Object(id=r) for r in cfg['payment_roles']]
-        await ctx.send(content=' '.join(f'<@&{r.id}>' for r in roles), embed=embed('Payment review requested', f'Order `{order_id}`\nReceipt submitted. Staff must check the actual transaction before approval.'), allowed_mentions=discord.AllowedMentions(roles=roles))
+        await send_card(ctx.send, themed_embed('ticket', 'Payment review requested', f'Order `{order_id}`\nReceipt submitted. Staff must check the actual transaction before approval.', config=cfg), key='payment', channel=ctx.channel, content=' '.join(f'<@&{r.id}>' for r in roles), allowed_mentions=discord.AllowedMentions(roles=roles))
 
     @commands.hybrid_command(help='Approve or reject a submitted payment after independent verification.')
     @commands.guild_only()
@@ -220,7 +222,7 @@ class Commerce(commands.Cog):
         if result['delivery_kind'] == 'file':
             await ctx.author.send(embed=embed(result['name'], 'Your product file is attached.'), file=discord.File(result['path']))
         else:
-            await ctx.author.send(embed=embed(result['name'], result['delivery_value']))
+            await send_card(ctx.author.send, themed_embed('product', result['name'], result['delivery_value'], config=self.bot.core.config(ctx.guild.id)), key='product')
         self.bot.market.delivered(a, order_id)
         await respond(ctx, 'Delivery sent', 'Your product is in your DMs.')
 
@@ -234,7 +236,7 @@ class Commerce(commands.Cog):
                 lines.append(f'**{o.snapshot["name"]}** • {o.state}' + f'\n`{o.id}` • {o.currency} {o.amount/100:.2f}')
         # Text-command results are sent by DM to avoid exposing order details.
         if not ctx.interaction:
-            await ctx.author.send(embed=embed('Your orders', '\n'.join(lines) or 'No orders yet.'))
+            await send_card(ctx.author.send, themed_embed('shop', 'Your orders', '\n'.join(lines) or 'No orders yet.', config=self.bot.core.config(ctx.guild.id)), key='shop')
         else:
             await respond(ctx, 'Your orders', '\n'.join(lines) or 'No orders yet.')
 

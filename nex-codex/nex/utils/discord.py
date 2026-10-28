@@ -7,6 +7,7 @@ CYAN = 0x38CFEF
 
 def embed(title, description='', *, error=False):
     result = discord.Embed(title=title[:256], description=description[:4096], color=0xF87171 if error else CYAN, timestamp=discord.utils.utcnow())
+    result.set_author(name='NEX CODEX')
     result.set_footer(text='NEX CODEX • Your community, connected')
     return result
 

@@ -7,6 +7,8 @@ from ..security import Actor, DomainError
 from ..services.core import audit
 from ..utils.discord import embed, safe_role
 from ..utils.theme import themed_embed
+from ..utils.cards import send_card
+from ..utils.guides import IntroView
 
 
 class Events(commands.Cog):
@@ -28,6 +30,31 @@ class Events(commands.Cog):
                 logging.getLogger('nex').warning('guild_log.failed guild=%s', guild.id)
 
     @commands.Cog.listener()
+    async def on_message(self, message):
+        if not message.guild or message.author.bot or message.webhook_id or not self.bot.user:
+            return
+        if self.bot.user.id not in {user.id for user in message.mentions}:
+            return
+        # Leave mention-prefix commands to discord.py's normal command dispatcher.
+        ctx = await self.bot.get_context(message)
+        if ctx.valid:
+            return
+        try:
+            self.bot.limiter.check(('mention_user', message.guild.id, message.author.id), 2, 30)
+            self.bot.limiter.check(('mention_channel', message.channel.id), 5, 30)
+        except DomainError:
+            return
+        cfg = self.bot.core.config(message.guild.id)
+        item = themed_embed('help', 'Hey, I’m NEX CODEX', 'Your community, connected. Explore commands, discover server templates and bot source code, or open a private support ticket.', config=cfg)
+        item.add_field(name='Start here', value=f"`/help` or `{discord.utils.escape_markdown(cfg['prefix'])}help` • `/shop` • `/ticket`", inline=False)
+        if message.author.id in self.bot.config.owner_ids or message.author.guild_permissions.administrator:
+            item.add_field(name='Your workspace', value='`/setup` opens the step-by-step guide. `/paymentsetup` configures QR/UPI and ticket roles.', inline=False)
+        try:
+            await send_card(message.reply, item, key='help', channel=message.channel, view=IntroView(message.author.id,cfg), mention_author=False, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException:
+            logging.getLogger('nex').warning('mention.reply.failed guild=%s', message.guild.id)
+
+    @commands.Cog.listener()
     async def on_member_join(self, member):
         cfg = self.bot.core.config(member.guild.id)
         with self.bot.db.transaction() as s:
@@ -36,7 +63,7 @@ class Events(commands.Cog):
         if channel:
             message = self.render(cfg['welcome_message'], member)
             try:
-                await channel.send(embed=themed_embed('welcome', 'Welcome to the community', message, config=cfg))
+                await send_card(channel.send, themed_embed('welcome', 'Welcome to the community', message, config=cfg), key='welcome', channel=channel)
             except discord.HTTPException:
                 pass
         role = member.guild.get_role(cfg['auto_role'])
@@ -61,7 +88,7 @@ class Events(commands.Cog):
         channel = member.guild.get_channel(cfg['leave_channel'])
         if channel:
             try:
-                await channel.send(embed=themed_embed('leave', 'Member left', self.render(cfg['leave_message'], member), config=cfg))
+                await send_card(channel.send, themed_embed('leave', 'Member left', self.render(cfg['leave_message'], member), config=cfg), key='leave', channel=channel)
             except discord.HTTPException:
                 pass
         await self.log(member.guild, 'Member left', f'{member.id} • {count} entitlement(s). Departure alone does not establish abuse.')
@@ -97,7 +124,7 @@ class Events(commands.Cog):
             channel = self.bot.get_channel(giveaway.channel_id)
             if channel:
                 try:
-                    await channel.send(embed=themed_embed('giveaway', 'Giveaway complete', f'**{giveaway.prize}**\n' + (', '.join(f'<@{u}>' for u in giveaway.winners) or 'No eligible entries.'), config=self.bot.core.config(giveaway.guild_id)))
+                    await send_card(channel.send, themed_embed('giveaway', 'Giveaway complete', f'**{giveaway.prize}**\n' + (', '.join(f'<@{u}>' for u in giveaway.winners) or 'No eligible entries.'), config=self.bot.core.config(giveaway.guild_id)), key='giveaway', channel=channel)
                 except discord.HTTPException:
                     continue
                 with self.bot.db.transaction() as s:

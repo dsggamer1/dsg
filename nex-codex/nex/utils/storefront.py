@@ -5,6 +5,7 @@ from ..models import Product
 from ..security import Actor, DomainError
 from .discord import embed
 from .theme import themed_embed, emoji_for
+from .cards import send_card, edit_card
 
 
 def product_embed(product, config=None):
@@ -78,7 +79,8 @@ class ProductSelect(discord.ui.Select):
             if not product or product.guild_id != interaction.guild_id or not product.published or product.archived or product.category not in ('template', 'source'):
                 raise DomainError('This product is no longer available.')
         cfg = bot.core.config(interaction.guild_id)
-        await interaction.response.send_message(embed=product_embed(product, cfg), view=CheckoutView(interaction.user.id, product, cfg), ephemeral=True)
+        await interaction.response.defer(ephemeral=True)
+        await send_card(interaction.followup.send, product_embed(product, cfg), key='product', channel=interaction.channel, view=CheckoutView(interaction.user.id, product, cfg), ephemeral=True)
 
 
 class ShopView(PersonalView):
@@ -106,7 +108,7 @@ class ShopView(PersonalView):
 
     async def turn(self, interaction, offset):
         view = ShopView(self.user_id, self.bot, self.guild_id, self.category, self.search, self.page+offset)
-        await interaction.response.edit_message(embed=view.card(), view=view)
+        await edit_card(interaction, view.card(), key='shop', view=view)
 
     @discord.ui.button(label='Previous', style=discord.ButtonStyle.secondary, emoji='◀️', row=1)
     async def previous(self, interaction, button):
@@ -133,6 +135,6 @@ class ShopPanel(discord.ui.View):
             bot = interaction.client
             bot.limiter.check(('shop_panel', interaction.guild_id, interaction.user.id), 5, 60)
             view = ShopView(interaction.user.id, bot, interaction.guild_id)
-            await interaction.followup.send(embed=view.card(), view=view, ephemeral=True)
+            await send_card(interaction.followup.send, view.card(), key='shop', channel=interaction.channel, view=view, ephemeral=True)
         except DomainError as exc:
             await interaction.followup.send(str(exc), ephemeral=True)

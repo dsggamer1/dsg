@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.5.0 — 2026-10-28
+
+- Extend the NEX visual theme to community/store cards, with ten compact bundled headers and graceful media fallback; preserve actual payment QR and configured shop images.
+- Add owner/admin paymentsetup with role/category selectors, validated UPI/QR configuration and additive staff membership; retain owner-only product management and independent payment review.
+- Add personal setup walkthroughs, product category choices, clearer draft next steps and complete Hinglish OWNER_GUIDE.md.
+- Reply to direct bot mentions with rate-limited personal Help/Shop shortcuts; preserve normal command dispatch and ignore automated messages.
+- Add real Shop/Setup shortcuts below help navigation. Images remain visual; interaction lives in Discord components.
+
 ## 1.4.1 — 2026-10-28
 
 - Refine all four original help animations with an orbital NEX emblem, glass cards, subtle particles and coordinated category accents; 32-frame, 3.2-second loops.
