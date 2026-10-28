@@ -15,9 +15,7 @@ from tests.test_commands_and_storefront import new_bot
 
 
 @pytest.mark.parametrize('who',[Actor(101,1000,administrator=True),Actor(102,1000,frozenset({20,30})),Actor(200,1000)])
-def test_nonowners_cannot_change_products_or_configuration(core,market,paid,who):
-    with pytest.raises(DomainError,match='Only a bot owner'):
-        core.configure(who,{'shop_title':'Unauthorized change'})
+def test_nonowners_cannot_change_products(core,market,paid,who):
     with pytest.raises(DomainError,match='Only a bot owner'):
         market.save_product(who,{'name':'Unauthorized source','category':'source','delivery_value':'x'})
     with pytest.raises(DomainError,match='Only a bot owner'):
@@ -25,23 +23,39 @@ def test_nonowners_cannot_change_products_or_configuration(core,market,paid,who)
     assert core.config(1000)['shop_title']=='NEX CODEX • The collection'
 
 
-@pytest.mark.parametrize('user_id',[101,102,200])
-async def test_owner_command_checks_reject_administrator_and_staff(db,core,tmp_path,user_id):
+@pytest.mark.parametrize('user_id,administrator',[(100,False),(101,True),(102,False),(200,False)])
+async def test_management_command_checks_prefix_and_slash(db,core,tmp_path,user_id,administrator):
     bot=await new_bot(db,tmp_path)
-    names=['welcome','leave','prefix','configure','setup','diagnostics','addproduct','productedit','productpublish','createshop','sync']
-    for name in names:
+    owner_names=['addproduct','productedit','productpublish','createshop','sync']
+    admin_names=['welcome','leave','prefix','configure','setup','diagnostics','installemojis']
+    for name in owner_names+admin_names:
         command=bot.get_command(name)
-        ctx=SimpleNamespace(bot=bot,command=command,interaction=None,guild=SimpleNamespace(id=1000),author=SimpleNamespace(id=user_id,guild_permissions=discord.Permissions(administrator=True)))
-        with pytest.raises(DomainError,match='Only a bot owner'):
-            await command.can_run(ctx)
+        ctx=SimpleNamespace(bot=bot,command=command,interaction=None,guild=SimpleNamespace(id=1000),author=SimpleNamespace(id=user_id,guild_permissions=discord.Permissions(administrator=administrator)))
+        allowed=user_id==100 or (administrator and name in admin_names)
+        if allowed:
+            assert await command.can_run(ctx)
+        else:
+            with pytest.raises(DomainError):
+                await command.can_run(ctx)
         if getattr(command,'app_command',None) is not None:
             interaction=SimpleNamespace(client=bot,_baton=ctx)
-            with pytest.raises(DomainError,match='Only a bot owner'):
-                await command.app_command._check_can_run(interaction)
-        ctx.author.id=100
-        assert await command.can_run(ctx)
+            if allowed:
+                assert await command.app_command._check_can_run(interaction)
+            else:
+                with pytest.raises(DomainError):
+                    await command.app_command._check_can_run(interaction)
     assert bot.get_command('productadd') is bot.get_command('addproduct')
     await bot.close()
+
+
+@pytest.mark.parametrize('who,allowed',[(Actor(101,1000,administrator=True),True),(Actor(100,1000,owner=True),True),(Actor(102,1000,frozenset({20,30})),False),(Actor(200,1000),False)])
+def test_configuration_requires_owner_or_administrator(core,who,allowed):
+    if allowed:
+        assert core.configure(who,{'shop_title':'My community'})['shop_title']=='My community'
+    else:
+        with pytest.raises(DomainError,match='Administrator'):
+            core.configure(who,{'shop_title':'Unauthorized'})
+        assert core.config(1000)['shop_title']=='NEX CODEX • The collection'
 
 
 async def test_help_hides_owner_commands_from_members(db,core,tmp_path):
@@ -53,6 +67,12 @@ async def test_help_hides_owner_commands_from_members(db,core,tmp_path):
     member_text=str(card.to_dict())
     assert '/shop' in member_text and '/ticket' in member_text
     assert '/addproduct' not in member_text and '/configure' not in member_text
+    ctx.author.id=101
+    ctx.author.guild_permissions=discord.Permissions(administrator=True)
+    await type(cog).help.callback(cog,ctx)
+    admin_text=str(ctx.send.await_args.kwargs['embed'].to_dict())
+    assert '/configure' in admin_text and '/installemojis' in admin_text
+    assert '/addproduct' not in admin_text and '/createshop' not in admin_text
     ctx.author.id=100
     await type(cog).help.callback(cog,ctx)
     assert '/addproduct' in str(ctx.send.await_args.kwargs['embed'].to_dict())

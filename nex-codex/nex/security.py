@@ -25,11 +25,11 @@ class Actor:
 
     def require_owner(self):
         if not self.owner:
-            raise DomainError("Only a bot owner configured in OWNER_IDS may manage products, shops or settings.")
+            raise DomainError("Only a bot owner configured in OWNER_IDS may manage products or shop panels.")
 
     def require_admin(self):
         if not (self.owner or self.administrator):
-            raise DomainError('Administrator permission required.')
+            raise DomainError('A configured bot owner or server Administrator is required.')
 
 
 def safe_https(value: str, *, attachment=False):

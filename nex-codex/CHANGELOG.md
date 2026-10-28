@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.3.0 — 2026-10-28
+
+- Allow configured bot owners OR current server administrators to integrate/configure their server through commands, services and the dashboard, replacing v1.2's owner-only settings rule at the user's request.
+- Keep addproduct/edit/publish, createshop and global sync restricted to OWNER_IDS. Preserve customer/staff/reviewer flows and payment self-review protection.
+- Split the supplied cyan artwork into49 Discord-ready PNGs; add an administrator/owner emoji installer that reuses uploads and saves only actual Discord-returned IDs. Report partial uploads, capacity and permission failures honestly.
+- Update help visibility, deployment permissions documentation, distribution asset inclusion and authorization/emoji regression coverage.
+
 ## 1.2.0 — 2026-10-28
 
 - Narrowed active commands to welcome/leave, tickets, giveaways, say/broadcast, products/shop and help, plus owner setup and the purchase/payment/delivery subflows.

@@ -23,7 +23,7 @@ class Core:
             return config(session, guild_id)
 
     def configure(self, actor, changes):
-        actor.require_owner()
+        actor.require_admin()
         with self.db.transaction() as s:
             value = GuildConfig.model_validate(config(s, actor.guild_id) | changes).model_dump()
             if actor.guild_id in value['staff_roles'] + value['payment_roles'] + value['self_roles']:

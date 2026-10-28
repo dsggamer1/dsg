@@ -1,7 +1,7 @@
 import json
 import discord
 from discord.ext import commands
-from ..utils.discord import actor, respond, embed, owner_only
+from ..utils.discord import actor, respond, embed, owner_only, admin_or_owner
 from ..utils.theme import themed_embed, emoji_for
 from ..utils.storefront import PersonalView
 from ..security import DomainError
@@ -10,21 +10,21 @@ from ..services.core import audit
 HELP_CATEGORIES = {'Utility': ('help', 'Welcome & announcements'), 'Commerce': ('shop', 'Shop & tickets'), 'Community': ('giveaway', 'Giveaways')}
 
 
-def visible_commands(cog, owner):
-    return sorted((c for c in cog.get_commands() if not c.hidden and (owner or not c.extras.get('owner_only'))), key=lambda c:c.name)
+def visible_commands(cog, owner, administrator=False):
+    return sorted((c for c in cog.get_commands() if not c.hidden and (owner or not c.extras.get('owner_only')) and (owner or administrator or not c.extras.get('admin_only'))), key=lambda c:c.name)
 
 
 class HelpSelect(discord.ui.Select):
-    def __init__(self, bot, owner=False, config=None):
-        self.bot, self.owner, self.config = bot, owner, config
-        super().__init__(placeholder='Choose a command category', options=[discord.SelectOption(label=HELP_CATEGORIES[name][1], value=name, emoji=emoji_for(HELP_CATEGORIES[name][0], config)) for name in HELP_CATEGORIES if bot.get_cog(name) and visible_commands(bot.get_cog(name), owner)])
+    def __init__(self, bot, owner=False, config=None, administrator=False):
+        self.bot, self.owner, self.config, self.administrator = bot, owner, config, administrator
+        super().__init__(placeholder='Choose a command category', options=[discord.SelectOption(label=HELP_CATEGORIES[name][1], value=name, emoji=emoji_for(HELP_CATEGORIES[name][0], config)) for name in HELP_CATEGORIES if bot.get_cog(name) and visible_commands(bot.get_cog(name), owner, administrator)])
 
     async def callback(self, interaction):
         cog = self.bot.get_cog(self.values[0])
         key, title = HELP_CATEGORIES[cog.qualified_name]
         item = themed_embed(key, title, 'Use slash commands or your server prefix. <Brackets> are required; [brackets] are optional. Staff commands enforce permissions.', config=self.config)
-        for command in visible_commands(cog, self.owner):
-            item.add_field(name=f'/{command.qualified_name}' + (' · Owner' if command.extras.get('owner_only') else ''), value=f'{command.help}\n`{command.name} {command.signature}`'[:1024], inline=False)
+        for command in visible_commands(cog, self.owner, self.administrator):
+            item.add_field(name=f'/{command.qualified_name}' + (' · Owner' if command.extras.get('owner_only') else ' · Admin' if command.extras.get('admin_only') else ''), value=f'{command.help}\n`{command.name} {command.signature}`'[:1024], inline=False)
         await interaction.response.edit_message(embed=item, view=self.view)
 
 
@@ -32,17 +32,20 @@ class Utility(commands.Cog):
     """Focused community controls and owner configuration."""
     def __init__(self, bot):
         self.bot = bot
+        from ..services.emojis import EmojiInstaller
+        self.emoji_installer = EmojiInstaller(bot.core)
 
     @commands.hybrid_command(help='Browse the actual shop, ticket, giveaway and announcement commands.')
     async def help(self, ctx):
         owner = ctx.author.id in self.bot.config.owner_ids
+        administrator = bool(ctx.guild and getattr(getattr(ctx.author, 'guild_permissions', None), 'administrator', False))
         cfg = self.bot.core.config(ctx.guild.id) if ctx.guild else None
         view = PersonalView(ctx.author.id)
-        view.add_item(HelpSelect(self.bot, owner, cfg))
+        view.add_item(HelpSelect(self.bot, owner, cfg, administrator))
         item = themed_embed('help', 'NEX CODEX • Command center', 'Welcome your community. Share announcements. Open your collection. Choose a category for usage and permissions.', config=cfg)
         for name, (key, title) in HELP_CATEGORIES.items():
             cog = self.bot.get_cog(name)
-            commands_here = visible_commands(cog, owner) if cog else []
+            commands_here = visible_commands(cog, owner, administrator) if cog else []
             if commands_here:
                 item.add_field(name=f'{emoji_for(key,cfg)} {title}', value=' · '.join(f'`/{c.name}`' for c in commands_here), inline=False)
         if owner:
@@ -51,7 +54,7 @@ class Utility(commands.Cog):
 
     async def membership_message(self, ctx, kind, channel, message, enabled):
         a = actor(ctx)
-        a.require_owner()
+        a.require_admin()
         if not enabled:
             self.bot.core.configure(a, {kind+'_channel': None})
             await respond(ctx, 'Message disabled', f'{kind.title()} messages are disabled for this server.')
@@ -72,14 +75,14 @@ class Utility(commands.Cog):
         item.add_field(name='Destination', value=f'<#{destination}>' if destination else f'Not configured. Use /{kind} with a channel.')
         await ctx.send(embed=item, ephemeral=True)
 
-    @commands.hybrid_command(extras={'owner_only': True}, help='Set or preview the welcome message; enabled:false disables it (bot owner).')
-    @owner_only()
+    @commands.hybrid_command(extras={'admin_only': True}, help='Set or preview the welcome message; enabled:false disables it (owner or administrator).')
+    @admin_or_owner()
     @commands.guild_only()
     async def welcome(self, ctx, channel: discord.TextChannel = None, enabled: bool = True, *, message: str = ''):
         await self.membership_message(ctx, 'welcome', channel, message, enabled)
 
-    @commands.hybrid_command(extras={'owner_only': True}, help='Set or preview the leave message; enabled:false disables it (bot owner).')
-    @owner_only()
+    @commands.hybrid_command(extras={'admin_only': True}, help='Set or preview the leave message; enabled:false disables it (owner or administrator).')
+    @admin_or_owner()
     @commands.guild_only()
     async def leave(self, ctx, channel: discord.TextChannel = None, enabled: bool = True, *, message: str = ''):
         await self.membership_message(ctx, 'leave', channel, message, enabled)
@@ -117,15 +120,15 @@ class Utility(commands.Cog):
     async def broadcast(self, ctx, title: str, message: str, channel: discord.TextChannel = None):
         await self.announce(ctx, channel, message, title)
 
-    @commands.hybrid_command(extras={'owner_only': True}, name='prefix', help='Change the server text-command prefix (bot owner).')
-    @owner_only()
+    @commands.hybrid_command(extras={'admin_only': True}, name='prefix', help='Change the server text-command prefix (owner or administrator).')
+    @admin_or_owner()
     @commands.guild_only()
     async def set_prefix(self, ctx, prefix: str):
         self.bot.core.configure(actor(ctx), {'prefix':prefix})
         await respond(ctx, 'Prefix updated', f'New prefix: `{prefix}`')
 
-    @commands.hybrid_command(extras={'owner_only': True}, help='Update a validated configuration field using JSON (bot owner).')
-    @owner_only()
+    @commands.hybrid_command(extras={'admin_only': True}, help='Update a validated configuration field using JSON (owner or administrator).')
+    @admin_or_owner()
     @commands.guild_only()
     async def configure(self, ctx, key: str, *, value: str):
         try:
@@ -135,20 +138,20 @@ class Utility(commands.Cog):
         self.bot.core.configure(actor(ctx), {key:data})
         await respond(ctx, 'Configuration saved', f'Updated `{key}`.')
 
-    @commands.hybrid_command(extras={'owner_only': True}, help='Show the focused community and shop setup checklist (bot owner).')
-    @owner_only()
+    @commands.hybrid_command(extras={'admin_only': True}, help='Show the focused community and shop setup checklist (owner or administrator).')
+    @admin_or_owner()
     @commands.guild_only()
     async def setup(self, ctx):
-        item = themed_embed('settings', 'NEX CODEX • Owner setup', 'Only IDs listed in OWNER_IDS can manage products, shop panels or settings.', config=self.bot.core.config(ctx.guild.id))
+        item = themed_embed('settings', 'NEX CODEX • Server setup', 'Configured bot owners and server administrators can set up this server. Products and shop panels remain restricted to OWNER_IDS.', config=self.bot.core.config(ctx.guild.id))
         item.add_field(name='01 · Welcome & leave', value='Use /welcome and /leave with a channel and template. Templates: {user}, {name}, {server}.', inline=False)
         item.add_field(name='02 · Private support', value='Use /configure to set staff_roles, payment_roles, ticket_category and log_channel. Role lists use JSON arrays of numeric IDs.', inline=False)
         item.add_field(name='03 · Your collection', value='Create drafts with /addproduct, review terms with /productedit, then /productpublish. /createshop posts a permanent browse button.', inline=False)
         item.add_field(name='04 · Manual payments', value='Configure upi_id, qr_url, payee and currency. Reviewers independently verify transactions; screenshots never auto-approve.', inline=False)
-        item.add_field(name='05 · Brand details', value='Configure shop_title, shop_description, shop_image and emojis. Emoji slots include welcome, leave, ticket, giveaway, broadcast, product, shop and help.', inline=False)
+        item.add_field(name='05 · Brand details', value='Run /installemojis for the supplied cyan artwork. Configure shop_title, shop_description, shop_image and emojis. Emoji slots include welcome, leave, ticket, giveaway, broadcast, product, shop and help.', inline=False)
         await ctx.send(embed=item, ephemeral=True)
 
-    @commands.hybrid_command(extras={'owner_only': True}, help='Check local command setup and channel permissions (bot owner).')
-    @owner_only()
+    @commands.hybrid_command(extras={'admin_only': True}, help='Check local command setup and channel permissions (owner or administrator).')
+    @admin_or_owner()
     @commands.guild_only()
     async def diagnostics(self, ctx):
         from ..bot import prefix
@@ -161,6 +164,21 @@ class Utility(commands.Cog):
         item.add_field(name='This channel', value=', '.join(missing) if missing else 'Core permissions available', inline=False)
         item.add_field(name='Registration', value='Invite with bot + applications.commands; SYNC_COMMANDS=true. Optional COMMAND_GUILD_IDS provides direct guild sync.', inline=False)
         await ctx.send(embed=item, ephemeral=True)
+
+    @commands.hybrid_command(extras={'admin_only': True}, help='Install the supplied cyan emoji theme in this server (owner or administrator).')
+    @admin_or_owner()
+    @commands.guild_only()
+    async def installemojis(self, ctx):
+        a = actor(ctx)
+        a.require_admin()
+        self.bot.limiter.check(('emoji-install', ctx.guild.id), 1, 60)
+        result = await self.emoji_installer.install(a, ctx.guild)
+        detail = f"Created: {result['created']} · Reused: {result['reused']} · Theme slots mapped: {result['mapped']}/14."
+        if result['failure']:
+            detail += '\n' + result['failure'] + ' Successful mappings were saved.'
+        else:
+            detail += '\nTheme saved. Repost existing shop panels to refresh their buttons.'
+        await ctx.send(embed=themed_embed('settings', 'Emoji setup • ' + ('Partial' if result['failure'] else 'Complete'), detail, config=self.bot.core.config(ctx.guild.id)), ephemeral=True)
 
     @commands.command(hidden=True)
     @owner_only()

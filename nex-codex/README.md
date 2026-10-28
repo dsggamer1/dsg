@@ -35,27 +35,34 @@ Upload the **contents of `NEX_CODEX/`** together. Select Python 3.11 or newer, i
 1. Create an application and bot at <https://discord.com/developers/applications>.
 2. Copy its current bot token into `DISCORD_TOKEN`. Enable **Server Members Intent** and **Message Content Intent** under Bot. Members supports welcome/leave; message content supports prefix commands and transcripts.
 3. Invite with **bot** and **applications.commands** scopes. Grant View Channels, Send Messages, Embed Links, Attach Files, Read Message History and Manage Channels for private tickets. Manage Roles is needed only if using the optional welcome auto-role; place the bot above that nonprivileged role. Administrator is not required.
-4. Set your own user ID in `OWNER_IDS`. Only those IDs can configure NEX CODEX or manage products/shop panels. Guild owners, administrators and staff do **not** gain those rights automatically.
-5. Start/restart the bot. Slash commands synchronize automatically. Use `/help`; the bot owner can use `/setup` and `/diagnostics`. Prefix defaults to `!`, or `DEFAULT_PREFIX` until a guild override is saved.
+4. Set your own user ID in `OWNER_IDS`. Configured owners and server administrators can set up and configure their server. Product management and shop-panel creation require OWNER_IDS; staff roles alone cannot change settings.
+5. Start/restart the bot. Slash commands synchronize automatically. Use `/help`; owners and administrators can use `/setup` and `/diagnostics`. Prefix defaults to `!`, or `DEFAULT_PREFIX` until a guild override is saved.
 
 If old commands remain visible, keep the same `COMMAND_GUILD_IDS` used previously and restart so that guild's registration is replaced. Global changes can take time to propagate. Owner-only `!sync` retries registration. If prefix commands do not respond, check Message Content Intent, the prefix and channel permissions. Clear startup messages explain absent/rejected tokens or disabled privileged intents. Actual live Discord setup still needs verification with your credentials.
 
+### Who can integrate the bot?
+
+Server setup commands and dashboard configuration are restricted to configured owners or current Discord administrators. Members can still shop, buy and open tickets; configured staff can handle the permitted staff operations. Product publication and shop creation remain owner-only. Owner IDs are user IDs, never roles or server IDs.
+
+Discord controls who can install an application. Runtime setup checks do not prove who originally invited it: users with Manage Server may be offered installation by Discord even without Administrator. For a bot used only by your own account, disable Public Bot in Developer Portal. To share installation with other administrators, configure Discord's application/server integration permissions and distribute the invite only to your intended administrators. This project does not claim to override Discord's installation rules.
+
 ## Command and permission map
 
-Slash commands and equivalent prefix commands are registered. `/help` lists the current registry, with owner setup commands hidden from nonowners. Runtime checks enforce permissions even when a command is visible in Discord's menu.
+Slash commands and equivalent prefix commands are registered. `/help` lists the current registry, with management commands shown according to owner/administrator access. Runtime checks enforce permissions even when a command is visible in Discord's menu.
 
 | Access | Commands |
 |---|---|
 | Members | `/help`, `/shop`, `/product`, `/buy`, `/orders`, `/deliver`, `/ticket`, `/payment` |
 | Staff or administrator | `/say`, `/broadcast`, `/giveaway`, `/reroll`, `/ticketmanage`, `/transcript`, `/orderstate` |
 | Payment reviewers or administrator | `/paymentreview` — self-review is always prohibited |
-| **Bot owners in OWNER_IDS only** | `/welcome`, `/leave`, `/addproduct`, `/productedit`, `/productpublish`, `/createshop`, `/configure`, `/prefix`, `/setup`, `/diagnostics`, `!sync` |
+| **Bot owner or server administrator** | `/welcome`, `/leave`, `/configure`, `/prefix`, `/setup`, `/diagnostics`, `/installemojis` |
+| **Bot owners in OWNER_IDS only** | `/addproduct`, `/productedit`, `/productpublish`, `/createshop`, `!sync` |
 
 Configured bot owners can also perform staff/reviewer operations, subject to the self-payment prohibition. `staff_roles` grant staff access; `payment_roles` grant payment review only. Configuration/product ownership checks also run in services and the dashboard. The old text spelling `!productadd` is an alias for `!addproduct`; the slash command is `/addproduct`.
 
 Moderation, generic utility/fun, XP, role selection, premium, referrals and AI commands are **not registered** in this focused release. Their historical models/services remain for data compatibility. Automated moderation/security/XP message processors are inactive. Existing saved reminders still finish through the recovery worker; no new reminder command is exposed. Hosting remains excluded.
 
-## Owner setup
+## Owner and administrator setup
 
 Start with `/setup`. `/configure key value` accepts validated JSON. With slash commands, enter a string value as `"text"`, role IDs as `[123456789012345678]`, and a channel ID as a number. Examples:
 
@@ -86,7 +93,7 @@ A call without a channel shows a preview. A channel/message saves the configurat
 
 ### Emoji styling
 
-Owners can customize the `emojis` JSON configuration. Accepted slots:
+Owners and server administrators can customize the `emojis` JSON configuration. Accepted slots:
 
 `welcome`, `leave`, `ticket`, `giveaway`, `say`, `broadcast`, `product`, `shop`, `help`, `settings`, `success`, `error`, `previous`, `next`.
 
@@ -94,7 +101,7 @@ Owners can customize the `emojis` JSON configuration. Accepted slots:
 /configure key:emojis value:{"welcome":"👋","giveaway":"🎉","shop":"🛍️"}
 ```
 
-Unicode emojis and Discord custom codes (`<:name:ID>` or `<a:name:ID>`) are validated. Custom emojis must exist and be available to the bot in Discord; inaccessible custom emojis cannot be verified offline. Defaults remain until replacements are supplied. Repost shop panels/giveaways to change their existing button appearance; new embeds and views use the current configuration. No specific user-supplied emoji list was received for this revision.
+Unicode emojis and Discord custom codes (`<:name:ID>` or `<a:name:ID>`) are validated. Custom emojis must exist and be available to the bot in Discord; inaccessible custom emojis cannot be verified offline. The supplied artwork is bundled under `nex/assets/emojis/`: 48 original icons plus a mirrored back arrow, each 128×128 PNG. Run **`/installemojis`** as an owner or administrator. Give the bot Create Expressions or Manage Expressions permission and allow up to 14 free static emoji slots. The command uploads only the icons used by the theme, reuses existing available unrestricted `nex_*` emojis, and saves actual returned IDs in this server’s configuration. Partial failures are reported; successful mappings are retained and retry reuses uploads. Existing non-theme icons are available for manual upload. No image-processing dependencies are needed to run the bot. Repost shop panels/giveaways to change their existing button appearance; new embeds and views use the current configuration. Fresh installs use Unicode defaults until the installer completes; no custom IDs are invented.
 
 ## Products and persistent shop
 
@@ -118,7 +125,7 @@ Other kinds: `link` (public HTTPS URL disclosed only after authorization) or `in
 
 **No payment gateway, automatic bank/screenshot verification, payment webhook or automatic refund.**
 
-Owner configures `upi_id`, `qr_url` (public HTTPS image), `payee`, `currency`, `payment_instructions`, `staff_roles` and `payment_roles`. No real payment information ships with the project. Currency must match the product.
+Owner or server administrator configures `upi_id`, `qr_url` (public HTTPS image), `payee`, `currency`, `payment_instructions`, `staff_roles` and `payment_roles`. No real payment information ships with the project. Currency must match the product.
 
 1. Customer confirms a paid product. A UUID order records the exact price and `pending_payment` status.
 2. A private purchase ticket includes the customer, bot, staff and reviewer roles; @everyone is denied. Discord administrators retain platform-level access.
@@ -149,9 +156,9 @@ Set `SESSION_SECRET` to the generated value, plus `DISCORD_CLIENT_ID`, `DISCORD_
 
 Public pages/catalogue and `/health` work without Discord credentials. Sign-in requests identify/guilds. OAuth state is expiring, cookie-bound and single-use. Sessions are opaque HttpOnly cookies backed by expiring database records. Sensitive forms require CSRF. Each protected guild request verifies live membership/roles/ownership with Discord and fails closed if verification fails. OAuth access tokens are not retained.
 
-Product/settings pages and settings API require the configured **bot owner**, not administrator status. Staff can access the overview and authorized reviewer queue. Customers see their own orders/downloads. Premium/hosting management pages are removed. Advanced settings use a validated JSON editor; historical fields remain for compatibility and are not advertised as active features.
+Product pages require a configured **bot owner**. Settings pages and the settings API require a configured owner **or current server Administrator permission**. Staff roles alone cannot change configuration. Staff can access the overview and authorized reviewer queue. Customers see their own orders/downloads. Premium/hosting management pages are removed. Advanced settings use a validated JSON editor; historical fields remain for compatibility and are not advertised as active features.
 
-Read APIs: `/health`, `/api/products`, `/api/guild/{guild_id}/orders` (own orders), `/api/guild/{guild_id}/settings` (owner only). Public products omit private delivery content. POST form endpoints are authenticated/CSRF-protected, not public integration APIs. Requests are limited to 64 KiB; there is no web upload endpoint. Pagination and sensitive actions are bounded/rate-limited.
+Read APIs: `/health`, `/api/products`, `/api/guild/{guild_id}/orders` (own orders), `/api/guild/{guild_id}/settings` (owner or administrator). Public products omit private delivery content. POST form endpoints are authenticated/CSRF-protected, not public integration APIs. Requests are limited to 64 KiB; there is no web upload endpoint. Pagination and sensitive actions are bounded/rate-limited.
 
 ## Database and deployment
 

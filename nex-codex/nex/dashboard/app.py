@@ -35,7 +35,7 @@ def create_app(cfg=None, database=None):
         if database is None:
             db.engine.dispose()
 
-    app = FastAPI(title='NEX CODEX', version='1.2.0', lifespan=lifespan, docs_url=None, redoc_url=None)
+    app = FastAPI(title='NEX CODEX', version='1.3.0', lifespan=lifespan, docs_url=None, redoc_url=None)
     app.state.config, app.state.db = cfg, db
     app.state.core, app.state.market, app.state.community = Core(db), Marketplace(db, cfg.product_root), Community(db)
     app.state.limiter = RateLimiter()
@@ -54,7 +54,7 @@ def create_app(cfg=None, database=None):
 
     def render(request, template, **data):
         user = session_for(request)
-        return templates.TemplateResponse(request=request, name=template, context={'user': user, 'brand': 'NEX CODEX', 'public_url': cfg.public_url, 'guild_id': None, 'active': 'overview', 'is_owner': bool(user and user.user_id in cfg.owner_ids), **data})
+        return templates.TemplateResponse(request=request, name=template, context={'user': user, 'brand': 'NEX CODEX', 'public_url': cfg.public_url, 'guild_id': None, 'active': 'overview', 'is_owner': bool(user and user.user_id in cfg.owner_ids), 'can_configure': bool(user and user.user_id in cfg.owner_ids), **data})
 
     @app.exception_handler(DomainError)
     async def domain_error(request, exc):
@@ -75,7 +75,7 @@ def create_app(cfg=None, database=None):
             s.execute(text('SELECT 1'))
             bot = s.get(Heartbeat, 'bot')
             online = bool(bot and bot.updated_at > now()-timedelta(seconds=90))
-        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.2.0'}
+        return {'service': 'NEX CODEX', 'database': 'ok', 'bot': 'online' if online else 'offline', 'version': '1.3.0'}
 
     @app.get('/auth/login')
     async def login(request: Request):
@@ -142,12 +142,12 @@ def create_app(cfg=None, database=None):
             counts = {'products': s.scalar(select(func.count()).select_from(Product).where(Product.guild_id == guild_id)), 'orders': s.scalar(select(func.count()).select_from(Order).where(Order.guild_id == guild_id)), 'tickets': s.scalar(select(func.count()).select_from(Ticket).where(Ticket.guild_id == guild_id, Ticket.state.in_(['open','creating']))), 'reviews': s.scalar(select(func.count()).select_from(Order).where(Order.guild_id == guild_id, Order.state == 'payment_submitted'))}
             activity = list(s.scalars(select(Audit).where(Audit.guild_id == guild_id).order_by(Audit.id.desc()).limit(8)))
             orders = list(s.scalars(select(Order).where(Order.guild_id == guild_id).order_by(Order.created_at.desc()).limit(6)))
-        return render(request, 'overview.html', guild_id=guild_id, counts=counts, activity=activity, orders=orders)
+        return render(request, 'overview.html', guild_id=guild_id, can_configure=a.owner or a.administrator, counts=counts, activity=activity, orders=orders)
 
     @app.get('/guild/{guild_id}/settings')
     async def get_settings(request: Request, guild_id: int):
-        (await guild_actor(request, guild_id)).require_owner()
-        return render(request, 'settings.html', guild_id=guild_id, config=app.state.core.config(guild_id), active='settings', saved=request.query_params.get('saved'))
+        (await guild_actor(request, guild_id)).require_admin()
+        return render(request, 'settings.html', guild_id=guild_id, config=app.state.core.config(guild_id), can_configure=True, active='settings', saved=request.query_params.get('saved'))
 
     @app.post('/guild/{guild_id}/settings')
     async def save_settings(request: Request, guild_id: int):
@@ -155,7 +155,7 @@ def create_app(cfg=None, database=None):
         form = await request.form()
         csrf(request, form, user)
         a = await guild_actor(request, guild_id)
-        a.require_owner()
+        a.require_admin()
         try:
             changes = json.loads(str(form.get('configuration', '{}')))
         except ValueError:
@@ -200,7 +200,7 @@ def create_app(cfg=None, database=None):
         a = await guild_actor(request, guild_id)
         with db.sessions() as s:
             orders = list(s.scalars(select(Order).where(Order.guild_id == guild_id, Order.user_id == a.user_id).order_by(Order.created_at.desc()).offset((max(1,page)-1)*20).limit(20)))
-        return render(request, 'orders.html', guild_id=guild_id, orders=orders, active='orders', page=max(1,page))
+        return render(request, 'orders.html', guild_id=guild_id, can_configure=a.owner or a.administrator, orders=orders, active='orders', page=max(1,page))
 
     @app.get('/guild/{guild_id}/download/{order_id}')
     async def download(request: Request, guild_id: int, order_id: str):
@@ -209,7 +209,7 @@ def create_app(cfg=None, database=None):
         result = app.state.market.delivery(a, order_id)
         if result['delivery_kind'] == 'file':
             return FileResponse(result['path'], filename=result['path'].name, media_type='application/octet-stream', background=BackgroundTask(app.state.market.delivered, a, order_id))
-        response = render(request, 'delivery.html', guild_id=guild_id, delivery=result, active='orders')
+        response = render(request, 'delivery.html', guild_id=guild_id, can_configure=a.owner or a.administrator, delivery=result, active='orders')
         response.background = BackgroundTask(app.state.market.delivered, a, order_id)
         return response
 
@@ -219,7 +219,7 @@ def create_app(cfg=None, database=None):
         a.require(app.state.core.config(guild_id), 'payment')
         with db.sessions() as s:
             rows = s.execute(select(Order, Payment).join(Payment, Payment.order_id == Order.id).where(Order.guild_id == guild_id, Payment.state == 'submitted', Order.state.in_(['payment_submitted','verification_required'])).order_by(Payment.created_at).limit(50)).all()
-        return render(request, 'payments.html', guild_id=guild_id, rows=rows, active='payments')
+        return render(request, 'payments.html', guild_id=guild_id, can_configure=a.owner or a.administrator, rows=rows, active='payments')
 
     @app.post('/guild/{guild_id}/payments/{order_id}')
     async def payment_decision(request: Request, guild_id: int, order_id: str):
@@ -249,7 +249,7 @@ def create_app(cfg=None, database=None):
 
     @app.get('/api/guild/{guild_id}/settings')
     async def api_settings(request: Request, guild_id: int):
-        (await guild_actor(request, guild_id)).require_owner()
+        (await guild_actor(request, guild_id)).require_admin()
         return app.state.core.config(guild_id)
 
     return app

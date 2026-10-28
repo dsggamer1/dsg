@@ -89,3 +89,15 @@ def owner_only():
             raise DomainError('Only a bot owner configured in OWNER_IDS may use this command.')
         return True
     return commands.check(predicate)
+
+
+def admin_or_owner():
+    """Use the invoking member's current server permissions, for both command forms."""
+    async def predicate(ctx):
+        if not ctx.guild:
+            raise DomainError('Use this command in a server.')
+        permissions = getattr(ctx.author, 'guild_permissions', None)
+        if ctx.author.id not in ctx.bot.config.owner_ids and not (permissions and permissions.administrator):
+            raise DomainError('A configured bot owner or server Administrator is required.')
+        return True
+    return commands.check(predicate)

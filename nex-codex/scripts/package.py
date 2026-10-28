@@ -17,7 +17,7 @@ for path in sorted(root.rglob('*')):
     relative = path.relative_to(root)
     if not path.is_file() or path.is_symlink() or any(part in excluded_dirs for part in relative.parts):
         continue
-    allowed = (len(relative.parts) == 1 and path.name in root_files) or (relative.parts[0] in source_dirs and path.suffix in source_extensions) or relative.as_posix() == 'private/products/.gitkeep'
+    allowed = (len(relative.parts) == 1 and path.name in root_files) or (relative.parts[0] in source_dirs and path.suffix in source_extensions) or (relative.parts[:3] == ('nex', 'assets', 'emojis') and path.suffix == '.png') or relative.as_posix() == 'private/products/.gitkeep'
     if not allowed or path.name.startswith('.env') and relative.as_posix() != '.env.example':
         continue
     files.append(path)

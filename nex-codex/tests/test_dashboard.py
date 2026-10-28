@@ -197,23 +197,27 @@ def test_protected_file_delivery_and_refund(web,db,market,owner,buyer,tmp_path,m
 
 
 @pytest.mark.parametrize('who',[Actor(101,1000,administrator=True),Actor(102,1000,frozenset({20,30}))])
-def test_admin_and_staff_cannot_bypass_owner_management(web,db,core,paid,monkeypatch,who):
+def test_admin_and_staff_cannot_bypass_product_ownership(web,db,core,paid,monkeypatch,who):
     app,c=web
     login(app,c,db,who.user_id)
     module=importlib.import_module('nex.dashboard.app')
     monkeypatch.setattr(module,'guild_actor',AsyncMock(return_value=who))
-    for path in ('settings','products','products/edit','products/edit?product_id='+paid.id):
+    for path in ('products','products/edit','products/edit?product_id='+paid.id):
         response=c.get('/guild/1000/'+path)
         assert response.status_code==400
         assert 'Only a bot owner' in response.text
-    assert c.get('/api/guild/1000/settings').status_code==400
-    assert c.post('/guild/1000/settings',data={'csrf':'synthetic-csrf','configuration':'{"staff_roles":[999]}'}).status_code==400
+    expected=200 if who.administrator else 400
+    assert c.get('/guild/1000/settings').status_code==expected
+    assert c.get('/api/guild/1000/settings').status_code==expected
+    assert c.post('/guild/1000/settings',data={'csrf':'synthetic-csrf','configuration':'{"prefix":"?"}'}).status_code==expected
+    assert core.config(1000)['prefix']==('?' if who.administrator else '!')
     assert c.post('/guild/1000/products',data={'csrf':'synthetic-csrf','product_id':paid.id,'name':'Unauthorized source','category':'source','price':'0','delivery_value':'x'}).status_code==400
     assert core.config(1000)['staff_roles']==[20]
     # Payment review access remains available to the configured reviewer/admin.
     assert c.get('/guild/1000/payments').status_code==200
     overview=c.get('/guild/1000').text
-    assert 'Configure server' not in overview and 'Manage products' not in overview
+    assert ('Configure server' in overview)==who.administrator
+    assert 'Manage products' not in overview
 
 
 def test_premium_routes_removed(web):
