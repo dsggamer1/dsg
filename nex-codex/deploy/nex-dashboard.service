@@ -1,0 +1,20 @@
+[Unit]
+Description=NEX CODEX dashboard
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nex
+WorkingDirectory=/opt/nex-codex
+EnvironmentFile=/etc/nex-codex.env
+ExecStart=/opt/nex-codex/.venv/bin/uvicorn nex.dashboard.app:create_app --factory --host 127.0.0.1 --port 8000 --workers 1 --no-access-log
+Restart=on-failure
+RestartSec=10
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
