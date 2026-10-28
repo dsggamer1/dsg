@@ -1,8 +1,10 @@
+from contextlib import closing
 import json
 import discord
 from discord.ext import commands
 from ..utils.discord import actor, respond, embed, owner_only, admin_or_owner
 from ..utils.theme import themed_embed, emoji_for
+from ..utils.help_media import help_file, can_attach
 from ..utils.storefront import PersonalView
 from ..security import DomainError
 from ..services.core import audit
@@ -14,18 +16,63 @@ def visible_commands(cog, owner, administrator=False):
     return sorted((c for c in cog.get_commands() if not c.hidden and (owner or not c.extras.get('owner_only')) and (owner or administrator or not c.extras.get('admin_only'))), key=lambda c:c.name)
 
 
+def help_card(bot, owner, administrator, config, section='Home'):
+    if section != 'Home':
+        cog = bot.get_cog(section)
+        key, title = HELP_CATEGORIES[section]
+        item = themed_embed(key, title, 'Use slash commands or your server prefix. <Brackets> are required; [brackets] are optional. Staff commands enforce permissions.', config=config)
+        for command in visible_commands(cog, owner, administrator):
+            access = ' · Owner' if command.extras.get('owner_only') else ' · Admin' if command.extras.get('admin_only') else ''
+            item.add_field(name=f'/{command.qualified_name}{access}', value=f'{command.help}\n`{command.name} {command.signature}`'[:1024], inline=False)
+        return item
+    item = themed_embed('help', 'NEX CODEX • Command center', 'Your community, connected. Choose a category below for the commands and their usage.', config=config)
+    for name, (key, title) in HELP_CATEGORIES.items():
+        cog = bot.get_cog(name)
+        commands_here = visible_commands(cog, owner, administrator) if cog else []
+        if commands_here:
+            item.add_field(name=f'{emoji_for(key,config)} {title}', value=' · '.join(f'`/{c.name}`' for c in commands_here), inline=False)
+    if owner:
+        item.add_field(name='Owner workspace', value='/setup · /welcome · /leave · /addproduct · /createshop · /configure', inline=False)
+    item.set_footer(text='NEX CODEX • Select a category below • Only you can control this menu')
+    return item
+
+
+class HelpView(PersonalView):
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message('Run /help to open your own command center.', ephemeral=True)
+            return False
+        return True
+
+    async def on_error(self, interaction, error, item):
+        import logging
+        logging.getLogger('nex').warning('help.menu.failed type=%s', type(error).__name__)
+        send = interaction.followup.send if interaction.response.is_done() else interaction.response.send_message
+        await send('The help menu could not update. Run /help to open it again.', ephemeral=True)
+
+
 class HelpSelect(discord.ui.Select):
-    def __init__(self, bot, owner=False, config=None, administrator=False):
+    def __init__(self, bot, owner=False, config=None, administrator=False, media_enabled=True):
         self.bot, self.owner, self.config, self.administrator = bot, owner, config, administrator
-        super().__init__(placeholder='Choose a command category', options=[discord.SelectOption(label=HELP_CATEGORIES[name][1], value=name, emoji=emoji_for(HELP_CATEGORIES[name][0], config)) for name in HELP_CATEGORIES if bot.get_cog(name) and visible_commands(bot.get_cog(name), owner, administrator)])
+        self.media_enabled = media_enabled
+        options = [discord.SelectOption(label='Home', value='Home', emoji=emoji_for('help', config), description='Your NEX CODEX command center')]
+        options.extend(discord.SelectOption(label=HELP_CATEGORIES[name][1], value=name, emoji=emoji_for(HELP_CATEGORIES[name][0], config)) for name in HELP_CATEGORIES if bot.get_cog(name) and visible_commands(bot.get_cog(name), owner, administrator))
+        super().__init__(placeholder='Explore NEX CODEX', options=options)
 
     async def callback(self, interaction):
-        cog = self.bot.get_cog(self.values[0])
-        key, title = HELP_CATEGORIES[cog.qualified_name]
-        item = themed_embed(key, title, 'Use slash commands or your server prefix. <Brackets> are required; [brackets] are optional. Staff commands enforce permissions.', config=self.config)
-        for command in visible_commands(cog, self.owner, self.administrator):
-            item.add_field(name=f'/{command.qualified_name}' + (' · Owner' if command.extras.get('owner_only') else ' · Admin' if command.extras.get('admin_only') else ''), value=f'{command.help}\n`{command.name} {command.signature}`'[:1024], inline=False)
-        await interaction.response.edit_message(embed=item, view=self.view)
+        section = self.values[0]
+        item = help_card(self.bot, self.owner, self.administrator, self.config, section)
+        for option in self.options:
+            option.default = option.value == section
+        # Acknowledge before uploading category artwork, including on slower hosts.
+        await interaction.response.defer()
+        file = help_file(section) if self.media_enabled else None
+        if file:
+            with closing(file):
+                item.set_image(url='attachment://nex_help.gif')
+                await interaction.edit_original_response(embed=item, view=self.view, attachments=[file])
+        else:
+            await interaction.edit_original_response(embed=item, view=self.view, attachments=[])
 
 
 class Utility(commands.Cog):
@@ -40,17 +87,17 @@ class Utility(commands.Cog):
         owner = ctx.author.id in self.bot.config.owner_ids
         administrator = bool(ctx.guild and getattr(getattr(ctx.author, 'guild_permissions', None), 'administrator', False))
         cfg = self.bot.core.config(ctx.guild.id) if ctx.guild else None
-        view = PersonalView(ctx.author.id)
-        view.add_item(HelpSelect(self.bot, owner, cfg, administrator))
-        item = themed_embed('help', 'NEX CODEX • Command center', 'Welcome your community. Share announcements. Open your collection. Choose a category for usage and permissions.', config=cfg)
-        for name, (key, title) in HELP_CATEGORIES.items():
-            cog = self.bot.get_cog(name)
-            commands_here = visible_commands(cog, owner, administrator) if cog else []
-            if commands_here:
-                item.add_field(name=f'{emoji_for(key,cfg)} {title}', value=' · '.join(f'`/{c.name}`' for c in commands_here), inline=False)
-        if owner:
-            item.add_field(name='Owner workspace', value='/setup · /welcome · /leave · /addproduct · /createshop · /configure', inline=False)
-        await ctx.send(embed=item, view=view, ephemeral=True)
+        media_enabled = can_attach(ctx)
+        view = HelpView(ctx.author.id)
+        view.add_item(HelpSelect(self.bot, owner, cfg, administrator, media_enabled))
+        item = help_card(self.bot, owner, administrator, cfg)
+        file = help_file('Home') if media_enabled else None
+        if file:
+            with closing(file):
+                item.set_image(url='attachment://nex_help.gif')
+                await ctx.send(embed=item, view=view, file=file, ephemeral=True)
+        else:
+            await ctx.send(embed=item, view=view, ephemeral=True)
 
     async def membership_message(self, ctx, kind, channel, message, enabled):
         a = actor(ctx)

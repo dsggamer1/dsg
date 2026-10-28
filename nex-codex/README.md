@@ -63,6 +63,14 @@ Configured bot owners can also perform staff/reviewer operations, subject to the
 
 Moderation, generic utility/fun, XP, role selection, premium, referrals and AI commands are **not registered** in this focused release. Their historical models/services remain for data compatibility. Automated moderation/security/XP message processors are inactive. Existing saved reminders still finish through the recovery worker; no new reminder command is exposed. Hosting remains excluded.
 
+### Animated command center
+
+`/help` (or your configured prefix + `help`) opens a personal NEX CODEX command center with a bundled cyan/blue animated banner. The dropdown switches between **Home**, **Welcome & announcements**, **Shop & tickets**, and **Giveaways**, with matching GIF artwork. Choose Home to return. Command lists come from the actual registered cogs; owner/admin controls retain their permission checks and visibility rules. Only the member who opened the menu can operate it.
+
+The four GIFs in `nex/assets/help/` are included in the full ZIP and attach directly to Discord messages—no external image hosting, GIF URL configuration or image processing at startup. Keep this folder when uploading to Wispbyte. The bot needs **Attach Files** for the artwork; if that permission or an asset is missing, text help and the dropdown remain available. Uploads are deferred before category changes; superseded attachments are replaced. Each GIF is900×660,16 frames and under75KB. Text commands remain selectable/readable outside the artwork.
+
+To rebuild the optional artwork, use `scripts/render_help.py` in an environment with Pillow and the DejaVu fonts at `/usr/share/fonts/truetype/dejavu/`. Neither is required to host/run the shipped bot. Existing automatic emoji startup remains enabled.
+
 ## Owner and administrator setup
 
 Start with `/setup`. `/configure key value` accepts validated JSON. With slash commands, enter a string value as `"text"`, role IDs as `[123456789012345678]`, and a channel ID as a number. Examples:

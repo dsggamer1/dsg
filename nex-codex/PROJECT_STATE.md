@@ -1,6 +1,6 @@
 # NEX CODEX project state
 
-Updated 2026-10-28. Version **1.3.1**. Focused community and template/source store. This replaces the earlier broad all-in-one command surface at the user's request.
+Updated 2026-10-28. Version **1.4.0**. Focused community and template/source store. This replaces the earlier broad all-in-one command surface at the user's request.
 
 ## Active command contract
 
@@ -21,6 +21,13 @@ Updated 2026-10-28. Version **1.3.1**. Focused community and template/source sto
 - Configurable Unicode/custom Discord emoji slots for welcome/leave, ticket, giveaway, announcements, products, shop and help. Supplied cyan artwork split into 49 uploadable PNGs. Startup automatically uploads/reuses all 49 application-owned icons with the existing bot token, restores 14 theme defaults before cog registration and preserves per-server overrides. No manual upload or command is needed. An optional /installemojis command still supports server-owned overrides. Invalid input rejected; actual custom-emoji availability requires Discord verification.
 - Preserved SQL persistence, source/template CRUD, free-claim limits, immutable order snapshots, manual QR/UPI payment review, private ticket overwrites, protected files/links/instructions, duplicate approval protection and refund revocation.
 - Dashboard matching the focused scope, owner-only product writes and owner/administrator settings writes, staff/reviewer payment queue, customer order history and public catalogue. OAuth sessions/state/CSRF/live membership checks retained.
+
+## Animated help update
+
+- Original NEX-branded cyan/blue animated help artwork inspired by the supplied reference; only active feature families shown. Four matching GIFs bundled in the ZIP, with no third-party brand copied.
+- Home/category dropdown navigation, actual registered commands and owner/admin visibility preserved. Personal controls, deferred uploads and old attachment replacement; fallback to text when artwork/Attach Files is unavailable.
+- `/help` works for prefix/slash forms. Optional build script uses Pillow/fonts only to regenerate assets; Wispbyte needs the shipped files and existing runtime requirements.
+- Extracted help release:76 affected tests passed on Python3.11.18 and Python3.14.4 (2 and1510 upstream warnings), covering media, navigation, actual prefix invocation/slash deferral, owner/admin visibility, existing commerce controls, packaging and public dashboard health. Prior matching database/payment/ticket/application-emoji checks are reused; the full suite was not rerun for this help-only update. compileall/import/27-command serialization/blank-token startup checks passed on both runtimes. All four GIFs fully decoded; cloud Chromium confirmed animation playback and mobile scaling without overflow. Live Discord media rendering remains unverified without a token.
 
 ## Validation
 

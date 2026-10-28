@@ -45,7 +45,7 @@ async def test_prefix_respects_environment_then_guild_override(db, tmp_path):
     await bot.close()
 
 
-@pytest.mark.parametrize('name,private', [('ticket',True),('deliver',True),('paymentreview',True),('broadcast',True),('giveaway',False),('shop',False)])
+@pytest.mark.parametrize('name,private', [('help',True),('ticket',True),('deliver',True),('paymentreview',True),('broadcast',True),('giveaway',False),('shop',False)])
 async def test_slower_slash_commands_are_acknowledged(db,name,private):
     bot = NexBot(Settings(_env_file=None, auto_load_emojis=False, sync_commands=False), db)
     ctx = SimpleNamespace(interaction=SimpleNamespace(response=SimpleNamespace(is_done=lambda:False)),command=SimpleNamespace(name=name),defer=AsyncMock())
@@ -194,11 +194,11 @@ async def test_help_and_storefront_payloads_fit_discord_limits(db,core,tmp_path)
     card=ctx.send.await_args.kwargs['embed']
     assert len(card)<=6000 and len(card.fields)<=25
     select=module.HelpSelect(bot, owner=True)
-    interaction=SimpleNamespace(response=SimpleNamespace(edit_message=AsyncMock()))
+    interaction=SimpleNamespace(response=SimpleNamespace(defer=AsyncMock()),edit_original_response=AsyncMock())
     for option in select.options:
         select._values=[option.value]
         await select.callback(interaction)
-        card=interaction.response.edit_message.await_args.kwargs['embed']
+        card=interaction.edit_original_response.await_args.kwargs['embed']
         assert len(card)<=6000 and len(card.fields)<=25
         assert all(len(field.value)<=1024 for field in card.fields)
     for command in bot.tree.get_commands():

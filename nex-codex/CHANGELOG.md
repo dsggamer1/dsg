@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.4.0 — 2026-10-28
+
+- Add a complete NEX CODEX animated help theme: cyan/blue cards, the supplied icon set and original Home/community/shop-ticket/giveaway GIF pages.
+- Add Home navigation, matching per-category uploads and personal help controls while preserving live registered command lists and owner/admin access.
+- Defer category uploads, replace prior attachments, close image streams and keep text help available if assets or Attach Files permission are missing.
+- Bundle all four small GIFs in the complete ZIP and add an optional artwork rebuild script; no runtime Pillow dependency or manual GIF setup.
+
 ## 1.3.1 — 2026-10-28
 
 - Correct the manual-only emoji workflow: main.py now automatically uploads/reuses all49 bundled application-owned emojis at startup by default, with the existing bot token. No installer command/server emoji permissions or slots are needed for the automatic artwork.
