@@ -12,11 +12,11 @@ Requires Python **3.11+** (verified locally with 3.14.4). Run all commands from 
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-cp .env.example .env
+cp -n .env.example .env  # Keep an existing .env; create one if absent
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-Put that generated value in `SESSION_SECRET` in `.env`. Do not commit `.env`. `requirements.lock` records the exact versions tested on Linux/Python 3.14; use `pip install -r requirements.lock` to reproduce that environment. On other Python versions/platforms install `requirements.txt` and run the tests before deployment.
+A starter `.env` with empty credentials is included. Put that generated value in `SESSION_SECRET` and fill in your Discord credentials locally. Never commit a populated `.env`; Git tracks the supplied starter file, so review changes before every commit. `requirements.lock` records the exact versions tested on Linux/Python 3.14; use `pip install -r requirements.lock` to reproduce that environment. On other Python versions/platforms install `requirements.txt` and run the tests before deployment.
 
 ```bash
 python -m nex.db
@@ -32,6 +32,18 @@ python -m nex.bot
 ```
 
 The bot exits with a clear message if `DISCORD_TOKEN` is missing. Ctrl+C gracefully closes the Discord client. Run **one bot process** and **one dashboard worker** for v1. Both use the same database and private product directory.
+
+## Hosting-panel upload (including Wispbyte)
+
+The project includes `.env` and a `main.py` entry point for Python hosting panels. These instructions describe the project requirements; the Wispbyte panel itself has not been verified.
+
+1. Extract the ZIP and upload the **contents of `NEX_CODEX/`** into your server's working directory. `main.py`, `.env`, `requirements.txt`, and the `nex/` folder must be together. Enable hidden-file display if `.env` is not visible.
+2. Use Python 3.11 or newer and install dependencies with `python -m pip install -r requirements.txt`.
+3. Open **`.env`** (one leading dot, not `..env`). Set `DISCORD_TOKEN` to your actual bot token, set `OWNER_IDS` to your numeric user ID in JSON array form, and configure the intents in the Discord Developer Portal as described below. The supplied credential fields are deliberately empty.
+4. If the panel asks for a startup file, use **`main.py`**. If it asks for a command, use **`python main.py`**. The bot initializes its database automatically.
+5. Keep `nex.db` and `private/products/` on persistent storage. Keep your populated `.env` private and do not push it to GitHub. Restart the bot after editing environment values.
+
+The Discord bot can run without the dashboard. For the dashboard, configure `SESSION_SECRET` and Discord OAuth credentials and run the documented Uvicorn command as a separate process/service with a reachable web port and public URL. Whether your hosting plan supports that second service must be checked in its panel.
 
 ## Discord Developer Portal setup
 

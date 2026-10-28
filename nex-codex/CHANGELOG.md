@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Added `main.py` as a Python hosting-panel entry point and documented upload/startup instructions.
+- Added a starter `.env` with empty credentials at the user's request.
+- ZIP packaging generates its starter `.env` from the example, excluding local credential values.
+
 ## 1.0.0 — 2026-10-28
 
 Initial runnable NEX CODEX foundation, added alongside the existing portfolio.

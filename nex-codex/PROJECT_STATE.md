@@ -50,6 +50,12 @@ Updated: 2026-10-28. Version: 1.0.0. Status: **runnable foundation; not every it
 11. **Provider integration:** real Discord/OAuth/intents/permissions, AI models and hosting provider implementations must be configured and verified in staging. The project contains no real payment setup, products, private files, customers or tokens.
 12. **Testing/deployment:** tests use Python 3.14.4 on Ubuntu 26.04. Python 3.11–3.13 and other platforms have not been exercised. Production TLS, DNS, reverse proxy and systemd examples require operator configuration. Security review/load testing should continue before public sales.
 
+## Configuration file follow-up
+
+A `main.py` hosting entry point is included; run `python main.py` from the project directory. Hosting-panel upload guidance is in README; the Wispbyte panel itself has not been tested.
+
+A starter `.env` is now included with empty credential fields. Fill it locally before starting Discord or the dashboard. Because the starter is tracked, do not commit your populated credentials. ZIP packaging uses only the example configuration for its starter `.env` and excludes the local `.env`.
+
 ## Recovery notes
 
 - Run both processes from the project directory with the same database/environment.
